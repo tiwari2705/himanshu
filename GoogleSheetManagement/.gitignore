@@ -1,0 +1,17 @@
+# Clasp
+.clasp.json
+
+# Service Account Keys
+*.json
+!appsscript.json
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
