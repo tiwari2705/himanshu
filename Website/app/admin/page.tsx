@@ -28,8 +28,28 @@ import {
   AlertOctagon,
   Percent,
   Printer,
+  Sun,
+  Moon,
+  LayoutGrid,
 } from 'lucide-react';
 import { openAndPrintTaxInvoice } from '@/lib/invoice-template';
+
+function ImsCubeLogo({ className = 'w-8 h-8' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 40 44"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M20 2L37 11.8L20 21.6L3 11.8L20 2Z" fill="#006EC4" />
+      <path d="M2.2 13.4L19.2 23.2V42L2.2 32.2V13.4Z" fill="#FF1E6A" />
+      <path d="M37.8 13.4L20.8 23.2V42L37.8 32.2V13.4Z" fill="#FFB800" />
+    </svg>
+  );
+}
+
 
 interface User {
   id: string;
@@ -175,6 +195,21 @@ export default function AdminPortalPage() {
   const [activeTab, setActiveTab] = useState<'queue' | 'inventory' | 'history' | 'scrap' | 'workers' | 'masters'>('queue');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      setIsDarkMode(document.documentElement.classList.contains('dark'));
+    }
+  }, []);
+
+  const toggleTheme = (dark: boolean) => {
+    setIsDarkMode(dark);
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark', dark);
+    }
+  };
+
 
   // Stats & Data states
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -699,153 +734,253 @@ export default function AdminPortalPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
-        <RefreshCw className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
+      <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] flex flex-col items-center justify-center text-slate-600 dark:text-slate-300">
+        <RefreshCw className="w-10 h-10 text-[#006EC4] animate-spin mb-4" />
         <p className="text-sm font-medium tracking-wide">Loading Enterprise ERP Master Engine...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <ShieldCheck className="w-6 h-6 text-white" />
-            </div>
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-900 dark:text-slate-100 flex flex-col lg:flex-row">
+      {/* Left Sidebar — Figma PNG 5 Soft Pastel Sky-Blue Navigation */}
+      <aside className="hidden lg:flex w-[256px] shrink-0 flex-col justify-between rounded-[24px] bg-[#D6E8F8] dark:bg-[#111C33] p-5 m-3 mr-0 sticky top-3 h-[calc(100vh-1.5rem)] select-none">
+        <div>
+          <div className="flex items-center gap-3 px-2 pt-1 pb-7">
+            <ImsCubeLogo className="w-8 h-9 shrink-0" />
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight text-white">STEELCRAFT</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30">
-                  ERP v2.0
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">Executive Production & Inventory Gateway</p>
-            </div>
-          </div>
-
-          {/* Right Action Bar */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={loadAllData}
-              disabled={refreshing}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700 flex items-center gap-1.5 text-xs font-medium"
-              title="Refresh all metrics"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
-              <span className="hidden sm:inline">Sync</span>
-            </button>
-
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-slate-300 font-medium">{currentUser?.username || 'Admin'}</span>
-              <span className="text-slate-500">|</span>
-              <span className="text-emerald-400 font-mono">OFFICIAL DB</span>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="p-2 rounded-lg bg-red-950/40 hover:bg-red-900/50 text-red-400 border border-red-800/40 transition flex items-center gap-1.5 text-xs font-medium"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Exit</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-1 overflow-x-auto pb-px scrollbar-none">
-          <button
-            onClick={() => setActiveTab('queue')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'queue'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            Approval Queue
-            {pendingBills.length > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-500 text-slate-950 animate-pulse">
-                {pendingBills.length}
+              <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white block leading-none">
+                Inventory
               </span>
-            )}
-          </button>
+              <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 block mt-0.5">
+                STEELCRAFT ERP v2.0
+              </span>
+            </div>
+          </div>
 
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'inventory'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <Box className="w-4 h-4" />
-            ERP Inventory & Ledger
-          </button>
+          <nav className="space-y-1.5">
+            <button
+              onClick={() => setActiveTab('queue')}
+              className={`w-full relative flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                activeTab === 'queue'
+                  ? 'bg-[#C1DCF5] dark:bg-sky-900/50 text-[#006EC4] dark:text-sky-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#C9E2F7]/60 dark:hover:bg-slate-800/60 font-medium'
+              }`}
+            >
+              {activeTab === 'queue' && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#006EC4] dark:bg-sky-400" />
+              )}
+              <span className="flex items-center gap-2.5">
+                <LayoutGrid className="w-4 h-4 shrink-0" />
+                <span>Approval Queue</span>
+              </span>
+              {pendingBills.length > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#006EC4] text-white">
+                  {pendingBills.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'history'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            Production Bills History
-          </button>
+            <button
+              onClick={() => setActiveTab('inventory')}
+              className={`w-full relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                activeTab === 'inventory'
+                  ? 'bg-[#C1DCF5] dark:bg-sky-900/50 text-[#006EC4] dark:text-sky-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#C9E2F7]/60 dark:hover:bg-slate-800/60 font-medium'
+              }`}
+            >
+              {activeTab === 'inventory' && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#006EC4] dark:bg-sky-400" />
+              )}
+              <Box className="w-4 h-4 shrink-0" />
+              <span>ERP Inventory &amp; Ledger</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('workers')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'workers'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <UserCheck className="w-4 h-4" />
-            Worker Management
-            <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">
-              {workers.length}
-            </span>
-          </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`w-full relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                activeTab === 'history'
+                  ? 'bg-[#C1DCF5] dark:bg-sky-900/50 text-[#006EC4] dark:text-sky-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#C9E2F7]/60 dark:hover:bg-slate-800/60 font-medium'
+              }`}
+            >
+              {activeTab === 'history' && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#006EC4] dark:bg-sky-400" />
+              )}
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>Production Bills History</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('masters')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'masters'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            BOM & Product Masters
-          </button>
+
+            <button
+              onClick={() => setActiveTab('workers')}
+              className={`w-full relative flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                activeTab === 'workers'
+                  ? 'bg-[#C1DCF5] dark:bg-sky-900/50 text-[#006EC4] dark:text-sky-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#C9E2F7]/60 dark:hover:bg-slate-800/60 font-medium'
+              }`}
+            >
+              {activeTab === 'workers' && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#006EC4] dark:bg-sky-400" />
+              )}
+              <span className="flex items-center gap-2.5">
+                <UserCheck className="w-4 h-4 shrink-0" />
+                <span>Worker Management</span>
+              </span>
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-white/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                {workers.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('masters')}
+              className={`w-full relative flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs transition-all ${
+                activeTab === 'masters'
+                  ? 'bg-[#C1DCF5] dark:bg-sky-900/50 text-[#006EC4] dark:text-sky-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-[#C9E2F7]/60 dark:hover:bg-slate-800/60 font-medium'
+              }`}
+            >
+              {activeTab === 'masters' && (
+                <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-[#006EC4] dark:bg-sky-400" />
+              )}
+              <Layers className="w-4 h-4 shrink-0" />
+              <span>BOM &amp; Product Masters</span>
+            </button>
+          </nav>
         </div>
-      </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 sm:pb-8 space-y-5 sm:space-y-6">
-        {/* Executive KPI Overview Cards - Mobile-first 2-col grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
+        <div className="space-y-3 pt-4 border-t border-[#BFD8EE] dark:border-slate-800">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out ({currentUser?.username || 'Admin'})</span>
+          </button>
+
+          <div className="bg-[#C5DEF3] dark:bg-slate-800 p-1 rounded-xl grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => toggleTheme(false)}
+              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                !isDarkMode ? 'bg-[#006EC4] text-white shadow-sm' : 'text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+              <span>Light</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleTheme(true)}
+              className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                isDarkMode ? 'bg-[#006EC4] text-white shadow-sm' : 'text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5" />
+              <span>Dark</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Top Greeting Header — Figma PNG 5 */}
+        <header className="border-b border-slate-200/70 dark:border-slate-800 bg-[#F8FAFC]/90 dark:bg-[#0B1120]/90 backdrop-blur sticky top-0 z-30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="lg:hidden shrink-0">
+                <ImsCubeLogo className="w-7 h-8" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-bold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                  <span>Hello {currentUser?.username || 'Admin'}</span>
+                  <span role="img" aria-label="wave">👋</span>
+                </h1>
+                <p className="text-[11px] sm:text-xs text-slate-400 truncate">
+                  Executive Production &amp; Inventory Gateway • Vishawkarma Steel Udyog
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <button
+                onClick={loadAllData}
+                disabled={refreshing}
+                className="px-3 py-2 rounded-xl bg-white dark:bg-[#152036] hover:border-[#006EC4] text-slate-600 dark:text-slate-300 transition border border-slate-200 dark:border-slate-800 flex items-center gap-1.5 text-xs font-medium shadow-sm"
+                title="Refresh all metrics"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#006EC4]' : ''}`} />
+                <span className="hidden sm:inline">Sync</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleTheme(!isDarkMode)}
+                className="lg:hidden p-2 rounded-xl bg-white dark:bg-[#152036] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300"
+                title="Toggle Theme"
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+
+              <div className="hidden sm:flex items-center gap-2.5 bg-white dark:bg-[#152036] border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+                <div className="w-8 h-8 rounded-lg bg-[#D6E8F8] dark:bg-sky-900/60 text-[#006EC4] dark:text-sky-300 font-bold text-xs flex items-center justify-center uppercase">
+                  {(currentUser?.username || 'AD').slice(0, 2)}
+                </div>
+                <div className="text-left pr-1">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white leading-tight">{currentUser?.username || 'Admin'}</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">Store Manager</div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="lg:hidden p-2 rounded-xl bg-white dark:bg-[#152036] hover:text-red-500 text-slate-500 border border-slate-200 dark:border-slate-800 transition"
+                title="Sign Out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="hidden sm:flex lg:hidden max-w-7xl mx-auto px-4 sm:px-6 gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+            <button onClick={() => setActiveTab('queue')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${activeTab === 'queue' ? 'bg-[#006EC4] text-white' : 'bg-white dark:bg-[#152036] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}>
+              Approval Queue ({pendingBills.length})
+            </button>
+            <button onClick={() => setActiveTab('inventory')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${activeTab === 'inventory' ? 'bg-[#006EC4] text-white' : 'bg-white dark:bg-[#152036] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}>
+              ERP Inventory &amp; Ledger
+            </button>
+            <button onClick={() => setActiveTab('history')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${activeTab === 'history' ? 'bg-[#006EC4] text-white' : 'bg-white dark:bg-[#152036] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}>
+              Production Bills
+            </button>
+            <button onClick={() => setActiveTab('workers')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${activeTab === 'workers' ? 'bg-[#006EC4] text-white' : 'bg-white dark:bg-[#152036] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}>
+              Workers ({workers.length})
+            </button>
+            <button onClick={() => setActiveTab('masters')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${activeTab === 'masters' ? 'bg-[#006EC4] text-white' : 'bg-white dark:bg-[#152036] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}>
+              BOM &amp; Masters
+            </button>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 sm:pb-8 space-y-5 sm:space-y-6">
+
+        {/* Executive KPI Overview Cards — Figma PNG 5 Summary Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Investment & Stock</span>
-              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Investment &amp; Stock</span>
+              <div className="w-9 h-9 rounded-xl bg-[#FFF4E5] dark:bg-amber-950/70 text-amber-500 flex items-center justify-center">
                 <Box className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl font-bold tracking-tight text-white">
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               ₹{(stats?.total_investment_inr || stats?.total_inventory_valuation || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </div>
-            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
               <span>{(stats?.total_metal_kg || 0).toFixed(1)} kg Metal Stock</span>
               {stats && stats.low_stock_count > 0 && (
-                <span className="text-amber-400 font-medium flex items-center gap-1">
+                <span className="text-amber-500 font-semibold flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
                   {stats.low_stock_count} Low
                 </span>
@@ -853,77 +988,80 @@ export default function AdminPortalPage() {
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Official DB Revenue</span>
-              <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Official DB Revenue</span>
+              <div className="w-9 h-9 rounded-xl bg-[#E6F7FF] dark:bg-sky-950/70 text-[#06B6D4] flex items-center justify-center">
                 <DollarSign className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl font-bold tracking-tight text-white">
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               ₹{((stats?.official_total_revenue_inr || 0) + (stats?.scrap_sale_revenue_inr || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </div>
-            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
               <span>Bills: ₹{(stats?.official_total_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-              <span className="text-amber-400 font-mono">Scrap Sold: ₹{(stats?.scrap_sale_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+              <span className="text-amber-500 font-mono font-medium">Scrap: ₹{(stats?.scrap_sale_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Today&apos;s Purchases</span>
-              <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Today&apos;s Purchases</span>
+              <div className="w-9 h-9 rounded-xl bg-[#F3EFFE] dark:bg-purple-950/70 text-[#8B5CF6] flex items-center justify-center">
                 <ArrowDownRight className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl font-bold tracking-tight text-white">
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
               ₹{(stats?.today_purchases_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </div>
-            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
               <span>{stats?.today_receipts_count || 0} Stock Receipts Today</span>
-              <span className="text-emerald-400">Verified</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Verified</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Pending Review</span>
-              <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Pending Review</span>
+              <div className="w-9 h-9 rounded-xl bg-[#E6F9F0] dark:bg-emerald-950/70 text-emerald-500 flex items-center justify-center">
                 <Clock className="w-4 h-4" />
               </div>
             </div>
-            <div className="text-2xl font-bold tracking-tight text-amber-400">
+            <div className="text-xl sm:text-2xl font-bold tracking-tight text-[#006EC4] dark:text-sky-400">
               {pendingBills.length}
             </div>
-            <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-1.5 flex items-center justify-between text-xs text-slate-400">
               <span>Awaiting Admin Review</span>
-              <span className="text-slate-500">Approval Queue</span>
+              <span className="text-slate-400">Approval Queue</span>
             </div>
           </div>
         </div>
 
+
         {/* TAB 1: APPROVAL QUEUE */}
         {activeTab === 'queue' && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-amber-400" />
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-[#006EC4]" />
                   Pending Bills Queue
                 </h2>
                 <p className="text-xs text-slate-400">
                   Review production bills submitted by workers and approve or reject them.
                 </p>
               </div>
-              <div className="text-xs text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 flex items-center gap-2">
-                <span className="font-semibold text-slate-200">{pendingBills.length}</span> pending verification
+              <div className="text-xs text-[#006EC4] dark:text-sky-300 bg-[#EEF5FC] dark:bg-sky-950/60 px-3.5 py-1.5 rounded-full border border-[#006EC4]/30 font-medium flex items-center gap-2">
+                <span className="font-bold">{pendingBills.length}</span> pending verification
               </div>
             </div>
 
             {pendingBills.length === 0 ? (
-              <div className="p-12 text-center rounded-2xl bg-slate-900/40 border border-slate-800/80">
-                <CheckCircle className="w-12 h-12 text-emerald-500/60 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-white">Queue is clear</h3>
+              <div className="p-12 text-center rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card">
+                <div className="w-12 h-12 rounded-2xl bg-[#E6F9F0] dark:bg-emerald-950/60 text-emerald-500 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Nothing found — Queue is clear</h3>
                 <p className="text-xs text-slate-400 mt-1">All worker submitted bills have been routed and processed.</p>
               </div>
             ) : (
@@ -939,49 +1077,50 @@ export default function AdminPortalPage() {
                   return (
                     <div
                       key={bill.id ? `${bill.id}-${bIdx}` : `pending-bill-${bIdx}`}
-                      className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition space-y-4 shadow-sm"
+                      className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 hover:border-[#006EC4]/50 transition space-y-4 shadow-ims-card"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <div className="p-2.5 rounded-xl bg-[#EEF5FC] dark:bg-sky-950/60 text-[#006EC4] border border-[#006EC4]/20">
                             <FileText className="w-5 h-5" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-white text-base">#{bill.bill_number}</span>
-                              <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium">
+                              <span className="font-bold text-slate-900 dark:text-white text-base">#{bill.bill_number}</span>
+                              <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#EEF5FC] dark:bg-sky-950/50 text-[#006EC4] dark:text-sky-300 font-medium border border-[#006EC4]/25">
                                 {bill.product_name}
                               </span>
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-                              <span>Customer: <strong className="text-slate-200">{bill.customer_name}</strong></span>
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-slate-400 mt-0.5">
+                              <span>Customer: <strong className="text-slate-700 dark:text-slate-200">{bill.customer_name}</strong></span>
                               <span>•</span>
-                              <span>Worker: <strong className="text-slate-200">@{bill.worker_username}</strong></span>
+                              <span>Worker: <strong className="text-[#006EC4] dark:text-sky-400">@{bill.worker_username}</strong></span>
                               <span>•</span>
                               <span>{new Date(bill.created_at).toLocaleString()}</span>
                             </div>
                           </div>
                         </div>
 
+
                         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                           <div className="text-right">
                             <div className="text-xs text-slate-400">Total (GST Inc.)</div>
-                            <div className="text-lg font-bold text-emerald-400">
+                            <div className="text-lg font-bold text-slate-900 dark:text-white">
                               ₹{parseFloat(bill.final_total_inr?.toString() || '0').toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => openAndPrintTaxInvoice(bill, 'Duplicate Copy')}
-                            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition"
+                            className="px-3.5 py-2 rounded-[10px] bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center gap-1.5 transition"
                             title="Preview / Print Tax Invoice"
                           >
-                            <Printer className="w-3.5 h-3.5 text-cyan-400" />
+                            <Printer className="w-3.5 h-3.5 text-[#006EC4]" />
                             <span>View Invoice</span>
                           </button>
                           <button
                             onClick={() => openDecisionModal(bill)}
-                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs tracking-wide shadow-md transition"
+                            className="px-4 py-2 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs tracking-wide shadow-sm transition"
                           >
                             Review &amp; Decide
                           </button>
@@ -989,30 +1128,30 @@ export default function AdminPortalPage() {
                       </div>
 
                       {/* Line items preview */}
-                      <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/60">
-                        <div className="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                      <div className="bg-[#F8FAFC] dark:bg-slate-950/60 rounded-xl p-3.5 border border-slate-200/80 dark:border-slate-800/60">
+                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2.5 flex items-center justify-between">
                           <span>CONSUMED MATERIALS BREAKDOWN</span>
-                          <span className="font-mono text-emerald-400">
+                          <span className="font-mono text-[#006EC4] dark:text-sky-400 font-bold">
                             Total Metal: {metalWeightKg.toFixed(3)} kg
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                           {bill.items?.map((item, iIdx) => (
                             <div
                               key={item.id ? `${item.id}-${iIdx}` : `preview-item-${bIdx}-${iIdx}`}
-                              className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-xs flex flex-col justify-between"
+                              className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-xs flex flex-col justify-between"
                             >
-                              <div className="flex items-center justify-between font-medium text-slate-200">
+                              <div className="flex items-center justify-between font-semibold text-slate-800 dark:text-slate-200">
                                 <span>{item.material_name}</span>
                                 <span className="text-slate-400 font-mono text-[11px]">{item.category}</span>
                               </div>
-                              <div className="mt-1 text-[11px] text-slate-400 flex items-center justify-between">
+                              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
                                 <span>
                                   {item.input_length && item.input_breadth
                                     ? `${item.input_length}' × ${item.input_breadth}' (${item.calculated_feet} ft)`
                                     : 'Direct'}
                                 </span>
-                                <span className="text-emerald-400 font-semibold">
+                                <span className="text-[#006EC4] dark:text-sky-400 font-bold font-mono">
                                   {item.unit === 'GRAM'
                                     ? `${(item.actual_quantity_consumed / 1000).toFixed(2)} kg`
                                     : `${item.actual_quantity_consumed} ${item.unit}`}
@@ -1030,55 +1169,57 @@ export default function AdminPortalPage() {
           </div>
         )}
 
+
         {/* TAB 2: INVENTORY & AUDIT LEDGER */}
         {activeTab === 'inventory' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Box className="w-5 h-5 text-emerald-400" />
-                  ERP Official Stock & Append-Only Ledger
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Box className="w-5 h-5 text-[#006EC4]" />
+                  ERP Official Stock &amp; Append-Only Ledger
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Real-time stock valuation and verifiable transaction audit trails. All stock movements derive from <span className="font-mono text-slate-300">inventory_ledger</span>.
+                  Real-time stock valuation and verifiable transaction audit trails. All stock movements derive from <span className="font-mono text-[#006EC4] dark:text-sky-400">inventory_ledger</span>.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2.5 w-full sm:w-auto">
                 <button
                   onClick={() => setShowAddStockModal(true)}
-                  className="flex-1 sm:flex-initial justify-center px-3 py-2.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition"
+                  className="flex-1 sm:flex-initial justify-center px-4 py-2.5 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs flex items-center gap-1.5 shadow-sm transition"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-4 h-4" />
                   Add Stock Receipt
                 </button>
                 <button
                   onClick={() => openSellScrapModal()}
-                  className="flex-1 sm:flex-initial justify-center px-3 py-2.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                  className="flex-1 sm:flex-initial justify-center px-4 py-2.5 rounded-[10px] bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 transition"
                 >
-                  <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                  <TrendingUp className="w-4 h-4 text-amber-500" />
                   Sell Scrap
                 </button>
               </div>
             </div>
 
             {/* Live Stock Variant Cards */}
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Live Material Stock Levels</h3>
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Live Material Stock Levels</h3>
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={inventorySearch}
                     onChange={(e) => setInventorySearch(e.target.value)}
-                    placeholder="Search materials..."
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    placeholder="Search Item..."
+                    className="w-full bg-white dark:bg-[#152036] border border-slate-200 dark:border-slate-700 rounded-[10px] pl-9 pr-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-[#006EC4] shadow-sm"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredInventory.map((item, itemIdx) => {
                   const stockDisplay =
                     item.base_unit === 'GRAM'
@@ -1090,55 +1231,55 @@ export default function AdminPortalPage() {
                   return (
                     <div
                       key={item.id ? `${item.id}-${itemIdx}` : `inv-item-${itemIdx}`}
-                      className="p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition flex flex-col justify-between"
+                      className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 hover:border-[#006EC4]/50 transition flex flex-col justify-between shadow-ims-card"
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 uppercase tracking-wider">
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#EEF5FC] dark:bg-sky-950/60 text-[#006EC4] dark:text-sky-300 border border-[#006EC4]/25 uppercase tracking-wider">
                             {item.category}
                           </span>
-                          <h4 className="font-semibold text-sm text-white mt-1.5">{item.material_name}</h4>
+                          <h4 className="font-bold text-sm text-slate-900 dark:text-white mt-2">{item.material_name}</h4>
                         </div>
                         {isLow ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
                             Low Stock
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                             In Stock
                           </span>
                         )}
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-4 gap-2 text-xs">
+                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-4 gap-2 text-xs">
                         <div>
-                          <div className="text-[10px] text-slate-500 uppercase">Total Stock</div>
-                          <div className="font-semibold text-slate-200 font-mono">
+                          <div className="text-[10px] text-slate-400 uppercase">Total Stock</div>
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 font-mono">
                             {parseFloat((item.total_stock_display ?? item.current_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-[10px] text-slate-500 uppercase">Used Stock</div>
-                          <div className="font-semibold text-cyan-400 font-mono">
+                          <div className="text-[10px] text-slate-400 uppercase">Used Stock</div>
+                          <div className="font-semibold text-[#006EC4] dark:text-sky-400 font-mono">
                             {parseFloat((item.normal_used_stock_display ?? item.used_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-[10px] text-slate-500 uppercase">Scrap</div>
-                          <div className="font-semibold text-amber-400 font-mono">
+                          <div className="text-[10px] text-slate-400 uppercase">Scrap</div>
+                          <div className="font-semibold text-amber-500 font-mono">
                             {parseFloat((item.secret_used_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-[10px] text-slate-500 uppercase">Remaining</div>
-                          <div className="font-bold text-white text-sm font-mono">{stockDisplay}</div>
+                          <div className="text-[10px] text-slate-400 uppercase">Remaining</div>
+                          <div className="font-bold text-slate-900 dark:text-white text-sm font-mono">{stockDisplay}</div>
                         </div>
                       </div>
-                      <div className="mt-2 pt-2 border-t border-slate-800/40 flex items-center justify-between text-[11px]">
+                      <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between text-[11px]">
                         <span className="text-slate-400 font-mono">
-                          Pending Alloc: <b className="text-amber-300">{parseFloat(item.allocated_stock_display?.toString() || '0').toFixed(2)} {item.display_unit || item.base_unit}</b>
+                          Pending Alloc: <b className="text-amber-600 dark:text-amber-300">{parseFloat(item.allocated_stock_display?.toString() || '0').toFixed(2)} {item.display_unit || item.base_unit}</b>
                         </span>
-                        <span className="text-emerald-400 font-semibold font-mono">
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">
                           Inv: ₹{parseFloat((item.total_investment_inr ?? item.stock_valuation_inr)?.toString() || '0').toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                         </span>
                       </div>
@@ -1148,12 +1289,13 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
+
             {/* WORKSHOP SCRAP INVENTORY & SCRAP SALES (INSIDE INVENTORY TAB) */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-amber-500" />
                     Workshop Scrap Inventory &amp; Scrap Sales
                   </h3>
                   <p className="text-xs text-slate-400">
@@ -1161,13 +1303,13 @@ export default function AdminPortalPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-bold">
+                  <span className="px-3.5 py-1.5 rounded-full bg-[#E6F9F0] dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-mono text-xs font-bold">
                     Scrap Sold Revenue: ₹{scrapTotals.total_sold_revenue_inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                   {unsoldScrap.length > 0 && (
                     <button
                       onClick={() => openSellScrapModal()}
-                      className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition"
+                      className="px-4 py-2 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs flex items-center gap-1.5 shadow-sm transition"
                     >
                       <DollarSign className="w-3.5 h-3.5" />
                       Sell Scrap
@@ -1177,40 +1319,40 @@ export default function AdminPortalPage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 overflow-hidden">
-                  <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Available Scrap Stock</span>
-                    <span className="text-[11px] font-mono text-slate-400">{unsoldScrap.length} entries</span>
+                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950/50 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-[#F4F6F9] dark:bg-slate-950 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-amber-400">Available Scrap Stock</span>
+                    <span className="text-[11px] font-mono text-slate-500">{unsoldScrap.length} entries</span>
                   </div>
-                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto ims-scrollbar">
                     <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                      <thead className="bg-[#F8FAFC] dark:bg-slate-900 text-slate-500 dark:text-slate-400 uppercase text-[10px] border-b border-slate-200/80 dark:border-slate-800">
                         <tr>
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">Material</th>
-                          <th className="px-3 py-2">Approved By</th>
-                          <th className="px-3 py-2 text-right">Scrap Qty</th>
-                          <th className="px-3 py-2 text-right">Action</th>
+                          <th className="px-3 py-2.5">Date</th>
+                          <th className="px-3 py-2.5">Material</th>
+                          <th className="px-3 py-2.5">Approved By</th>
+                          <th className="px-3 py-2.5 text-right">Scrap Qty</th>
+                          <th className="px-3 py-2.5 text-right">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                         {unsoldScrap.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-3 py-6 text-center text-slate-500 font-sans">No unsold scrap in stock.</td>
+                            <td colSpan={5} className="px-3 py-6 text-center text-slate-400 font-sans">No unsold scrap in stock.</td>
                           </tr>
                         ) : (
                           unsoldScrap.map((entry, uIdx) => (
-                            <tr key={entry.id ? `${entry.id}-${uIdx}` : `unsold-${uIdx}`} className="hover:bg-slate-800/30">
-                              <td className="px-3 py-2 text-slate-400 font-sans whitespace-nowrap">{new Date(entry.created_at).toLocaleDateString()}</td>
-                              <td className="px-3 py-2 font-sans font-medium text-white">{entry.item_name}</td>
-                              <td className="px-3 py-2 font-sans text-indigo-300">
+                            <tr key={entry.id ? `${entry.id}-${uIdx}` : `unsold-${uIdx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                              <td className="px-3 py-2.5 text-slate-500 font-sans whitespace-nowrap">{new Date(entry.created_at).toLocaleDateString()}</td>
+                              <td className="px-3 py-2.5 font-sans font-medium text-slate-900 dark:text-white">{entry.item_name}</td>
+                              <td className="px-3 py-2.5 font-sans text-[#006EC4] dark:text-sky-400">
                                 @{entry.created_by || 'admin'}
                               </td>
-                              <td className="px-3 py-2 text-right font-bold text-amber-400">
+                              <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">
                                 {(entry.quantity_display ?? entry.quantity_kg).toFixed(2)} {entry.unit || 'KG'}
                               </td>
-                              <td className="px-3 py-2 text-right font-sans">
-                                <button onClick={() => openSellScrapModal(entry)} className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                              <td className="px-3 py-2.5 text-right font-sans">
+                                <button onClick={() => openSellScrapModal(entry)} className="px-3 py-1 rounded-lg bg-[#006EC4] hover:bg-[#005A9E] text-white text-[11px] font-medium transition">
                                   Sell Scrap
                                 </button>
                               </td>
@@ -1221,35 +1363,36 @@ export default function AdminPortalPage() {
                     </table>
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 overflow-hidden">
-                  <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Sold Scrap History</span>
-                    <span className="text-[11px] font-mono text-emerald-400">{scrapSales.length} sold</span>
+
+                <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-950/50 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-[#F4F6F9] dark:bg-slate-950 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-emerald-400">Sold Scrap History</span>
+                    <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">{scrapSales.length} sold</span>
                   </div>
-                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto ims-scrollbar">
                     <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                      <thead className="bg-[#F8FAFC] dark:bg-slate-900 text-slate-500 dark:text-slate-400 uppercase text-[10px] border-b border-slate-200/80 dark:border-slate-800">
                         <tr>
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">Material</th>
-                          <th className="px-3 py-2 text-right">Qty Sold</th>
-                          <th className="px-3 py-2 text-right">Amount (₹)</th>
+                          <th className="px-3 py-2.5">Date</th>
+                          <th className="px-3 py-2.5">Material</th>
+                          <th className="px-3 py-2.5 text-right">Qty Sold</th>
+                          <th className="px-3 py-2.5 text-right">Amount (₹)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                         {scrapSales.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="px-3 py-6 text-center text-slate-500 font-sans">No scrap sold yet.</td>
+                            <td colSpan={4} className="px-3 py-6 text-center text-slate-400 font-sans">No scrap sold yet.</td>
                           </tr>
                         ) : (
                           scrapSales.map((sale, sIdx) => (
-                            <tr key={sale.id ? `${sale.id}-${sIdx}` : `sale-${sIdx}`} className="hover:bg-slate-800/30">
-                              <td className="px-3 py-2 text-slate-400 font-sans whitespace-nowrap">{new Date(sale.created_at).toLocaleDateString()}</td>
-                              <td className="px-3 py-2 font-sans font-medium text-slate-200">{sale.item_name}</td>
-                              <td className="px-3 py-2 text-right text-amber-400">
+                            <tr key={sale.id ? `${sale.id}-${sIdx}` : `sale-${sIdx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                              <td className="px-3 py-2.5 text-slate-500 font-sans whitespace-nowrap">{new Date(sale.created_at).toLocaleDateString()}</td>
+                              <td className="px-3 py-2.5 font-sans font-medium text-slate-900 dark:text-slate-200">{sale.item_name}</td>
+                              <td className="px-3 py-2.5 text-right text-amber-600 dark:text-amber-400">
                                 {(sale.quantity_display ?? sale.quantity_kg).toFixed(2)} {sale.unit || 'KG'}
                               </td>
-                              <td className="px-3 py-2 text-right font-bold text-emerald-400">
+                              <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
                                 ₹{sale.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </td>
                             </tr>
@@ -1262,33 +1405,34 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
-            {/* Audit Ledger History Table */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+
+            {/* Audit Ledger History Table — Figma PNG 8 Data Table Card */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card space-y-3.5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white">Append-Only Inventory Ledger (Recent 100 Transactions)</h3>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">Append-Only Inventory Ledger (Recent 100 Transactions)</h3>
                   <p className="text-xs text-slate-400">Verifiable transactional record of purchases, consumptions, and scrap sales.</p>
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-lg border border-slate-800/80">
+              <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 ims-scrollbar">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                  <thead className="bg-[#F4F6F9] dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 font-semibold text-xs border-b border-slate-200/80 dark:border-slate-800">
                     <tr>
-                      <th className="px-3 py-2.5">Date & Time</th>
-                      <th className="px-3 py-2.5">Material</th>
-                      <th className="px-3 py-2.5">Type</th>
-                      <th className="px-3 py-2.5 text-right">Delta</th>
-                      <th className="px-3 py-2.5 text-right">Unit Rate</th>
-                      <th className="px-3 py-2.5">Supplier / Invoice</th>
-                      <th className="px-3 py-2.5">Notes</th>
+                      <th className="px-3.5 py-3">Date &amp; Time</th>
+                      <th className="px-3.5 py-3">Material</th>
+                      <th className="px-3.5 py-3">Type</th>
+                      <th className="px-3.5 py-3 text-right">Delta</th>
+                      <th className="px-3.5 py-3 text-right">Unit Rate</th>
+                      <th className="px-3.5 py-3">Supplier / Invoice</th>
+                      <th className="px-3.5 py-3">Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                     {ledgerHistory.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                          No ledger transactions recorded yet.
+                        <td colSpan={7} className="px-4 py-10 text-center text-slate-400 font-sans">
+                          Nothing found — No ledger transactions recorded yet.
                         </td>
                       </tr>
                     ) : (
@@ -1301,36 +1445,36 @@ export default function AdminPortalPage() {
                             : `${delta} ${entry.base_unit}`;
 
                         return (
-                          <tr key={entry.id ? `${entry.id}-${eIdx}` : `ledger-${eIdx}`} className="hover:bg-slate-800/30 transition">
-                            <td className="px-3 py-2 text-slate-400 font-sans whitespace-nowrap">
+                          <tr key={entry.id ? `${entry.id}-${eIdx}` : `ledger-${eIdx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                            <td className="px-3.5 py-2.5 text-slate-500 dark:text-slate-400 font-sans whitespace-nowrap">
                               {new Date(entry.created_at).toLocaleString()}
                             </td>
-                            <td className="px-3 py-2 font-sans font-medium text-slate-200">
+                            <td className="px-3.5 py-2.5 font-sans font-medium text-slate-900 dark:text-slate-200">
                               {entry.material_name}
                             </td>
-                            <td className="px-3 py-2 font-sans">
+                            <td className="px-3.5 py-2.5 font-sans">
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                                   entry.transaction_type === 'PURCHASE_RECEIPT'
-                                    ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    ? 'bg-[#EEF5FC] text-[#006EC4] border border-[#006EC4]/25 dark:bg-sky-950/60 dark:text-sky-300'
                                     : entry.transaction_type === 'BILL_CONSUMPTION'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400'
+                                    : 'bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-400'
                                 }`}
                               >
                                 {entry.transaction_type}
                               </span>
                             </td>
-                            <td className={`px-3 py-2 text-right font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <td className={`px-3.5 py-2.5 text-right font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                               {isPositive ? `+${deltaFormatted}` : deltaFormatted}
                             </td>
-                            <td className="px-3 py-2 text-right text-slate-300">
+                            <td className="px-3.5 py-2.5 text-right text-slate-700 dark:text-slate-300">
                               ₹{parseFloat(entry.unit_cost_inr?.toString() || '0').toFixed(2)}
                             </td>
-                            <td className="px-3 py-2 font-sans text-slate-400">
+                            <td className="px-3.5 py-2.5 font-sans text-slate-500 dark:text-slate-400">
                               {entry.supplier_name ? `${entry.supplier_name} (${entry.invoice_no || 'No Inv'})` : '-'}
                             </td>
-                            <td className="px-3 py-2 font-sans text-slate-400 max-w-xs truncate" title={entry.notes || ''}>
+                            <td className="px-3.5 py-2.5 font-sans text-slate-500 dark:text-slate-400 max-w-xs truncate" title={entry.notes || ''}>
                               {entry.notes || '-'}
                             </td>
                           </tr>
@@ -1344,13 +1488,14 @@ export default function AdminPortalPage() {
           </div>
         )}
 
-        {/* TAB 3: BILLS HISTORY */}
+
+        {/* TAB 3: BILLS HISTORY — Figma PNG 8 Table Card */}
         {activeTab === 'history' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+          <div className="bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-ims-card space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-cyan-400" />
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#006EC4]" />
                   Official ERP Production Bills
                 </h2>
                 <p className="text-xs text-slate-400">
@@ -1359,39 +1504,45 @@ export default function AdminPortalPage() {
               </div>
 
               {/* Filters */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={billSearch}
                     onChange={(e) => setBillSearch(e.target.value)}
                     placeholder="Search bill, client, worker..."
-                    className="bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-[10px] pl-9 pr-3.5 py-2 text-xs text-slate-900 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-[#006EC4]"
                   />
                 </div>
 
-                <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs">
+                <div className="flex items-center gap-1.5 bg-[#F4F6F9] dark:bg-slate-900 p-1 rounded-[10px] border border-slate-200/80 dark:border-slate-800 text-xs">
                   <button
                     onClick={() => setBillStatusFilter('ALL')}
-                    className={`px-2.5 py-1 rounded font-medium transition ${
-                      billStatusFilter === 'ALL' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
+                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                      billStatusFilter === 'ALL'
+                        ? 'bg-[#006EC4] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     All
                   </button>
                   <button
                     onClick={() => setBillStatusFilter('APPROVED')}
-                    className={`px-2.5 py-1 rounded font-medium transition ${
-                      billStatusFilter === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-white'
+                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                      billStatusFilter === 'APPROVED'
+                        ? 'bg-[#006EC4] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Approved
                   </button>
                   <button
                     onClick={() => setBillStatusFilter('REJECTED')}
-                    className={`px-2.5 py-1 rounded font-medium transition ${
-                      billStatusFilter === 'REJECTED' ? 'bg-rose-500/20 text-rose-400' : 'text-slate-400 hover:text-white'
+                    className={`px-3 py-1 rounded-lg font-medium transition ${
+                      billStatusFilter === 'REJECTED'
+                        ? 'bg-[#006EC4] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Rejected
@@ -1401,9 +1552,9 @@ export default function AdminPortalPage() {
             </div>
 
             {/* Bills Table */}
-            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
+            <div className="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800 ims-scrollbar">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                <thead className="bg-[#F4F6F9] dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 font-semibold text-xs border-b border-slate-200/80 dark:border-slate-800">
                   <tr>
                     <th className="px-4 py-3">Bill Number</th>
                     <th className="px-4 py-3">Product</th>
@@ -1416,70 +1567,71 @@ export default function AdminPortalPage() {
                     <th className="px-4 py-3 text-center">Inspect</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
+
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                   {filteredAllBills.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-4 py-10 text-center text-slate-500 font-sans">
-                        No official bills match the selected filter.
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400 font-sans">
+                        Nothing found — No official bills match the selected filter.
                       </td>
                     </tr>
                   ) : (
                     filteredAllBills.map((bill, bIdx) => (
-                      <tr key={bill.id ? `${bill.id}-${bIdx}` : `history-bill-${bIdx}`} className="hover:bg-slate-800/30 transition">
-                        <td className="px-4 py-2.5 font-bold text-white whitespace-nowrap">
+                      <tr key={bill.id ? `${bill.id}-${bIdx}` : `history-bill-${bIdx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                        <td className="px-4 py-3 font-bold text-[#006EC4] dark:text-sky-400 whitespace-nowrap">
                           #{bill.bill_number}
                         </td>
-                        <td className="px-4 py-2.5 font-sans font-medium text-slate-200">
+                        <td className="px-4 py-3 font-sans font-medium text-slate-900 dark:text-slate-200">
                           {bill.product_name}
                         </td>
-                        <td className="px-4 py-2.5 font-sans text-slate-300">
+                        <td className="px-4 py-3 font-sans text-slate-600 dark:text-slate-300">
                           {bill.customer_name}
                         </td>
-                        <td className="px-4 py-2.5 font-sans text-slate-400">
+                        <td className="px-4 py-3 font-sans text-slate-500 dark:text-slate-400">
                           @{bill.worker_username}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-slate-300">
+                        <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
                           ₹{parseFloat(bill.selling_price_inr?.toString() || '0').toFixed(2)}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-slate-400">
+                        <td className="px-4 py-3 text-right text-slate-500 dark:text-slate-400">
                           ₹{parseFloat(bill.gst_amount_inr?.toString() || '0').toFixed(2)}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-bold text-emerald-400">
+                        <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-emerald-400">
                           ₹{parseFloat(bill.final_total_inr?.toString() || '0').toFixed(2)}
                         </td>
-                        <td className="px-4 py-2.5 font-sans">
+                        <td className="px-4 py-3 font-sans">
                           {bill.status === 'APPROVED' ? (
                             <div className="flex flex-col items-start gap-1">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20">
                                 Approved
                               </span>
-                              <span className="text-[11px] text-emerald-300 font-mono">
+                              <span className="text-[11px] text-emerald-600 dark:text-emerald-300 font-mono">
                                 by @{bill.decided_by_username || 'admin'}
                               </span>
                             </div>
                           ) : bill.status === 'REJECTED' ? (
                             <div className="flex flex-col items-start gap-1">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20">
                                 Rejected
                               </span>
-                              <span className="text-[11px] text-rose-300 font-mono">
+                              <span className="text-[11px] text-rose-600 dark:text-rose-300 font-mono">
                                 by @{bill.decided_by_username || 'admin'}
                               </span>
                             </div>
                           ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20">
                               Pending
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-center">
+                        <td className="px-4 py-3 text-center">
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               onClick={() => {
                                 setInspectBill(bill);
                                 setShowInspectModal(true);
                               }}
-                              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-[#006EC4] transition"
                               title="Inspect bill items"
                             >
                               <Eye className="w-4 h-4" />
@@ -1487,7 +1639,7 @@ export default function AdminPortalPage() {
                             {bill.status === 'APPROVED' && (
                               <button
                                 onClick={() => openAndPrintTaxInvoice(bill, 'Duplicate Copy')}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans font-bold text-[11px] flex items-center gap-1 shadow transition"
+                                className="px-3 py-1.5 rounded-lg bg-[#006EC4] hover:bg-[#005A9E] text-white font-sans font-medium text-[11px] flex items-center gap-1 shadow-sm transition"
                                 title="Download / Print Vishawkarma Steel Udyog Tax Invoice"
                               >
                                 <Printer className="w-3.5 h-3.5" />
@@ -1505,72 +1657,73 @@ export default function AdminPortalPage() {
           </div>
         )}
 
+
         {/* TAB 4B: WORKER MANAGEMENT */}
         {activeTab === 'workers' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+            <div className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-[#006EC4]" />
                   Worker Account Management
                 </h2>
                 <p className="text-xs text-slate-400">
                   Create Worker accounts (Name &amp; Password), or block/unblock and delete workers directly from the dashboard.
                 </p>
               </div>
-              <span className="text-xs text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 font-mono">
+              <span className="text-xs text-[#006EC4] dark:text-sky-300 bg-[#EEF5FC] dark:bg-sky-950/60 px-3.5 py-1.5 rounded-full border border-[#006EC4]/30 font-mono font-bold">
                 {workers.length} Workers
               </span>
             </div>
 
-            <form onSubmit={handleCreateWorker} className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-emerald-400" />
+            <form onSubmit={handleCreateWorker} className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card space-y-4">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-[#006EC4]" />
                 Create New Worker Account
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Worker Name *</label>
-                  <input type="text" required value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="e.g. worker3" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">Worker Name <span className="text-red-500">*</span></label>
+                  <input type="text" required value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="e.g. worker3" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Password *</label>
-                  <input type="password" required value={newWorkerPassword} onChange={(e) => setNewWorkerPassword(e.target.value)} placeholder="Min 4 characters" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">Password <span className="text-red-500">*</span></label>
+                  <input type="password" required value={newWorkerPassword} onChange={(e) => setNewWorkerPassword(e.target.value)} placeholder="Min 4 characters" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]" />
                 </div>
-                <button type="submit" disabled={creatingWorker} className="w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition">
+                <button type="submit" disabled={creatingWorker} className="w-full py-2.5 px-4 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs shadow-sm transition">
                   {creatingWorker ? 'Creating...' : '+ Create Worker Account'}
                 </button>
               </div>
             </form>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#152036] shadow-ims-card ims-scrollbar">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                <thead className="bg-[#F4F6F9] dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 font-semibold text-xs border-b border-slate-200/80 dark:border-slate-800">
                   <tr>
-                    <th className="px-4 py-3">Worker Name</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-right">Bills</th>
-                    <th className="px-4 py-3">Created</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3.5">Worker Name</th>
+                    <th className="px-4 py-3.5">Status</th>
+                    <th className="px-4 py-3.5 text-right">Bills</th>
+                    <th className="px-4 py-3.5">Created</th>
+                    <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {workers.map((w) => (
-                    <tr key={w.id} className="hover:bg-slate-800/30 transition">
-                      <td className="px-4 py-3 font-mono font-bold text-white">@{w.username}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${w.is_active ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border-rose-500/30'}`}>
+                    <tr key={w.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                      <td className="px-4 py-3.5 font-mono font-bold text-slate-900 dark:text-white">@{w.username}</td>
+                      <td className="px-4 py-3.5">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${w.is_active ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30' : 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-500/15 dark:text-rose-400 dark:border-rose-500/30'}`}>
                           {w.is_active ? 'ACTIVE' : 'BLOCKED'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-300">{w.bills_count || 0}</td>
-                      <td className="px-4 py-3 text-slate-400">{new Date(w.created_at).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3.5 text-right font-mono text-slate-700 dark:text-slate-300">{w.bills_count || 0}</td>
+                      <td className="px-4 py-3.5 text-slate-500 dark:text-slate-400">{new Date(w.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3.5 text-right">
                         <div className="inline-flex items-center gap-2">
-                          <button type="button" disabled={workerActionLoading === w.id} onClick={() => handleToggleBlockWorker(w)} className="px-3 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30">
+                          <button type="button" disabled={workerActionLoading === w.id} onClick={() => handleToggleBlockWorker(w)} className="px-3 py-1 rounded-full text-xs font-medium bg-[#EEF5FC] hover:bg-[#D6E8F8] text-[#006EC4] border border-[#006EC4]/30 transition">
                             {w.is_active ? 'Block' : 'Unblock'}
                           </button>
-                          <button type="button" disabled={workerActionLoading === w.id} onClick={() => handleDeleteWorker(w)} className="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30">
+                          <button type="button" disabled={workerActionLoading === w.id} onClick={() => handleDeleteWorker(w)} className="px-3 py-1 rounded-full text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition">
                             Delete
                           </button>
                         </div>
@@ -1583,13 +1736,14 @@ export default function AdminPortalPage() {
           </div>
         )}
 
+
         {/* TAB 5: BOM & MASTERS */}
         {activeTab === 'masters' && (
           <div className="space-y-6">
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-indigo-400" />
-                BOM Conversion Rules & Product Catalog
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Layers className="w-5 h-5 text-[#006EC4]" />
+                BOM Conversion Rules &amp; Product Catalog
               </h2>
               <p className="text-xs text-slate-400">
                 Configured frame perimeter formulas and metal weight conversions enforced across client and server.
@@ -1597,27 +1751,27 @@ export default function AdminPortalPage() {
             </div>
 
             {/* Add New Product Master Form */}
-            <form onSubmit={handleCreateMasterProduct} className="p-4 sm:p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-3 shadow-sm">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-400" />
+            <form onSubmit={handleCreateMasterProduct} className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 space-y-3.5 shadow-ims-card">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-[#006EC4]" />
                 Add New Product to Catalog
               </h3>
               <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
                 <div className="flex-1">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Product / Item Name *</label>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Product / Item Name <span className="text-red-500">*</span></label>
                   <input
                     type="text"
                     required
                     value={newMasterProductName}
                     onChange={(e) => setNewMasterProductName(e.target.value)}
                     placeholder="Enter any product name (e.g. Copper Door, Iron Window, Grill, Paint, etc.)"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={creatingMasterProduct}
-                  className="sm:w-auto py-2.5 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow transition"
+                  className="sm:w-auto py-2.5 px-5 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] disabled:opacity-50 text-white font-medium text-xs shadow-sm transition"
                 >
                   {creatingMasterProduct ? 'Adding...' : '+ Add Product to Catalog'}
                 </button>
@@ -1626,18 +1780,18 @@ export default function AdminPortalPage() {
 
             {/* Products Table */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Active Products & Formulas</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Active Products &amp; Formulas</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {products.map((p, pIdx) => (
-                  <div key={p.id ? `${p.id}-${pIdx}` : `product-${pIdx}`} className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+                  <div key={p.id ? `${p.id}-${pIdx}` : `product-${pIdx}`} className="p-5 rounded-2xl bg-white dark:bg-[#152036] border border-slate-200/80 dark:border-slate-800 shadow-ims-card flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-white text-base">{p.name}</h4>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
+                        <h4 className="font-bold text-slate-900 dark:text-white text-base">{p.name}</h4>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EEF5FC] dark:bg-sky-950/60 text-[#006EC4] dark:text-sky-300 border border-[#006EC4]/25 font-mono">
                           {p.frame_formula_type}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mt-2">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                         {p.frame_formula_type === 'DOOR_2L_PLUS_B'
                           ? 'Perimeter Formula: Feet = (2 × L) + B'
                           : p.frame_formula_type === 'WINDOW_2_L_PLUS_B'
@@ -1645,8 +1799,8 @@ export default function AdminPortalPage() {
                           : 'Custom calculation formula'}
                       </p>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-500 flex items-center justify-between">
-                      <span>Status: <strong className="text-emerald-400">Active Master</strong></span>
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                      <span>Status: <strong className="text-emerald-600 dark:text-emerald-400">Active Master</strong></span>
                       <span className="font-mono">{p.id.slice(0, 8)}...</span>
                     </div>
                   </div>
@@ -1654,20 +1808,21 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
+
             {/* Configured Material Variants */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Material Variants & BOM Rules</h3>
-              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Material Variants &amp; BOM Rules</h3>
+              <div className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#152036] shadow-ims-card ims-scrollbar">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
+                  <thead className="bg-[#F4F6F9] dark:bg-slate-950/80 text-slate-600 dark:text-slate-400 font-semibold text-xs border-b border-slate-200/80 dark:border-slate-800">
                     <tr>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Variant Name</th>
-                      <th className="px-4 py-3">Base Unit</th>
-                      <th className="px-4 py-3 text-right">BOM Weight / Foot (g/ft)</th>
+                      <th className="px-4 py-3.5">Category</th>
+                      <th className="px-4 py-3.5">Variant Name</th>
+                      <th className="px-4 py-3.5">Base Unit</th>
+                      <th className="px-4 py-3.5 text-right">BOM Weight / Foot (g/ft)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                     {inventory.map((v, vIdx) => {
                       const vid = v.id || v.material_variant_id || `variant-${vIdx}`;
                       const currentBom = parseFloat(v.bom_weight_per_foot_grams?.toString() || '0');
@@ -1675,17 +1830,17 @@ export default function AdminPortalPage() {
                       const isModified = bomEdits[vid] !== undefined && parseFloat(bomEdits[vid]) !== currentBom;
 
                       return (
-                        <tr key={`${vid}-${vIdx}`} className="hover:bg-slate-800/30 transition">
-                          <td className="px-4 py-2.5 font-sans font-bold text-slate-300">
+                        <tr key={`${vid}-${vIdx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition">
+                          <td className="px-4 py-3 font-sans font-bold text-[#006EC4] dark:text-sky-400">
                             {v.category}
                           </td>
-                          <td className="px-4 py-2.5 font-sans font-medium text-white">
+                          <td className="px-4 py-3 font-sans font-medium text-slate-900 dark:text-white">
                             {v.material_name}
                           </td>
-                          <td className="px-4 py-2.5 text-slate-400">
+                          <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
                             {v.base_unit}
                           </td>
-                          <td className="px-4 py-2 text-right">
+                          <td className="px-4 py-2.5 text-right">
                             <div className="inline-flex items-center justify-end gap-2">
                               <input
                                 type="number"
@@ -1698,17 +1853,17 @@ export default function AdminPortalPage() {
                                     [vid]: e.target.value,
                                   }))
                                 }
-                                className="w-28 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-2.5 py-1 text-right text-xs font-bold text-emerald-400 focus:outline-none"
+                                className="w-28 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 focus:border-[#006EC4] rounded-lg px-2.5 py-1.5 text-right text-xs font-bold text-[#006EC4] dark:text-sky-400 focus:outline-none"
                               />
                               <span className="text-[11px] text-slate-400">g/ft</span>
                               <button
                                 type="button"
                                 onClick={() => handleSaveBomWeight(vid, currentBom)}
                                 disabled={savingBomId === vid}
-                                className={`px-2.5 py-1 rounded-lg font-sans font-bold text-[11px] transition ${
+                                className={`px-3 py-1.5 rounded-lg font-sans font-medium text-[11px] transition ${
                                   isModified
-                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                                    ? 'bg-[#006EC4] hover:bg-[#005A9E] text-white shadow-sm'
+                                    : 'bg-[#EEF5FC] dark:bg-slate-800 hover:bg-[#D6E8F8] text-[#006EC4] dark:text-slate-300 border border-[#006EC4]/25 dark:border-slate-700'
                                 }`}
                               >
                                 {savingBomId === vid ? 'Saving...' : 'Save'}
@@ -1726,16 +1881,17 @@ export default function AdminPortalPage() {
         )}
       </main>
 
+
       {/* ==================================================================== */}
-      {/* BILL APPROVAL & REVIEW MODAL                                         */}
+      {/* BILL APPROVAL & REVIEW MODAL — Figma Blurred Backdrop & White Modal  */}
       {/* ==================================================================== */}
       {showApprovalModal && selectedBill && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/30 backdrop-blur-md">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-white dark:bg-[#152036] border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-7 shadow-ims-modal space-y-4 sm:space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-[#006EC4]" />
                   Review Bill — #{selectedBill.bill_number}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1744,29 +1900,29 @@ export default function AdminPortalPage() {
               </div>
               <button
                 onClick={() => setShowApprovalModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
             {/* Bill summary overview */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#F8FAFC] dark:bg-slate-950/60 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
               <div>
-                <span className="text-slate-500 uppercase text-[10px]">Product</span>
-                <p className="font-semibold text-white">{selectedBill.product_name}</p>
+                <span className="text-slate-400 uppercase text-[10px]">Product</span>
+                <p className="font-semibold text-slate-900 dark:text-white">{selectedBill.product_name}</p>
               </div>
               <div>
-                <span className="text-slate-500 uppercase text-[10px]">Customer</span>
-                <p className="font-semibold text-white">{selectedBill.customer_name}</p>
+                <span className="text-slate-400 uppercase text-[10px]">Customer</span>
+                <p className="font-semibold text-slate-900 dark:text-white">{selectedBill.customer_name}</p>
               </div>
               <div>
-                <span className="text-slate-500 uppercase text-[10px]">Worker</span>
-                <p className="font-semibold text-white">@{selectedBill.worker_username}</p>
+                <span className="text-slate-400 uppercase text-[10px]">Worker</span>
+                <p className="font-semibold text-[#006EC4] dark:text-sky-400">@{selectedBill.worker_username}</p>
               </div>
               <div>
-                <span className="text-slate-500 uppercase text-[10px]">Final Bill Total</span>
-                <p className="font-bold text-emerald-400 font-mono text-sm">
+                <span className="text-slate-400 uppercase text-[10px]">Final Bill Total</span>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
                   ₹{parseFloat(selectedBill.final_total_inr?.toString() || '0').toFixed(2)}
                 </p>
               </div>
@@ -1774,12 +1930,12 @@ export default function AdminPortalPage() {
 
             {/* Consumed line items table */}
             <div className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Materials to Consume
               </span>
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/40">
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 ims-scrollbar">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800">
+                  <thead className="bg-[#F4F6F9] dark:bg-slate-900 text-slate-600 dark:text-slate-400 text-[10px] uppercase border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-3 py-2">Material</th>
                       <th className="px-3 py-2">Dimensions</th>
@@ -1788,22 +1944,22 @@ export default function AdminPortalPage() {
                       <th className="px-3 py-2 text-right">Cost</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50 font-mono text-[11px]">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 font-mono text-[11px]">
                     {selectedBill.items?.map((item, itmIdx) => (
                       <tr key={item.id ? `${item.id}-${itmIdx}` : `modal-item-${itmIdx}`}>
-                        <td className="px-3 py-1.5 font-sans font-medium text-slate-200">
+                        <td className="px-3 py-2 font-sans font-medium text-slate-900 dark:text-slate-200">
                           {item.material_name}
                         </td>
-                        <td className="px-3 py-1.5 text-slate-400">
+                        <td className="px-3 py-2 text-slate-500">
                           {item.input_length && item.input_breadth ? `${item.input_length}' × ${item.input_breadth}'` : '-'}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-slate-300">
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
                           {item.calculated_feet ? `${item.calculated_feet} ft` : '-'}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-bold text-emerald-400">
+                        <td className="px-3 py-2 text-right font-bold text-[#006EC4] dark:text-sky-400">
                           {item.unit === 'GRAM' ? `${(item.actual_quantity_consumed / 1000).toFixed(2)} kg` : `${item.actual_quantity_consumed} ${item.unit}`}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-slate-300">
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
                           ₹{parseFloat(item.line_cost_inr?.toString() || '0').toFixed(0)}
                         </td>
                       </tr>
@@ -1813,11 +1969,12 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
+
             {/* Command Input Area */}
-            <div className="space-y-3 pt-2 border-t border-slate-800">
+            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Confirmation Action <span className="text-slate-500 font-normal">(Type Approve or reject)</span>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Confirmation Action <span className="text-slate-400 font-normal">(Type Approve or reject)</span>
                 </label>
                 <input
                   type="text"
@@ -1825,13 +1982,13 @@ export default function AdminPortalPage() {
                   value={commandInput}
                   onChange={(e) => setCommandInput(e.target.value)}
                   placeholder="Enter Approve or reject"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white font-mono placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-4 py-2.5 text-sm text-slate-900 dark:text-white font-mono placeholder-slate-400 focus:outline-none focus:border-[#006EC4]"
                 />
               </div>
 
               {/* Dynamic Action Visuals */}
               {isApprove && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 flex items-start gap-2">
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-700 dark:text-emerald-400 flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="block font-semibold">Bill Approval:</strong>
@@ -1842,7 +1999,7 @@ export default function AdminPortalPage() {
 
               {isReject && (
                 <div className="space-y-2">
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-400 flex items-start gap-2">
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-700 dark:text-rose-400 flex items-start gap-2">
                     <XCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                     <div>
                       <strong className="block font-semibold">Bill Rejection:</strong>
@@ -1850,15 +2007,15 @@ export default function AdminPortalPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Reason for Rejection <span className="text-rose-400">*</span>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Reason for Rejection <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={rejectionReason}
                       onChange={(e) => setRejectionReason(e.target.value)}
                       placeholder="e.g. Incorrect dimensions, out of stock, revised pricing needed"
-                      className="w-full bg-slate-950 border border-rose-500/50 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                      className="w-full bg-white dark:bg-slate-950 border border-red-300 dark:border-rose-500/50 rounded-[10px] px-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500"
                     />
                   </div>
                 </div>
@@ -1871,26 +2028,26 @@ export default function AdminPortalPage() {
               <button
                 type="button"
                 onClick={() => setCommandInput('Approve')}
-                className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono"
+                className="px-3.5 py-1 rounded-full bg-[#EEF5FC] hover:bg-[#D6E8F8] text-[#006EC4] border border-[#006EC4]/40 text-xs font-medium transition"
               >
                 Approve
               </button>
               <button
                 type="button"
                 onClick={() => setCommandInput('reject')}
-                className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-mono"
+                className="px-3.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-medium transition"
               >
                 Reject Bill
               </button>
             </div>
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => setShowApprovalModal(false)}
                 disabled={processingDecision}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition"
+                className="px-5 py-2.5 rounded-[10px] bg-white dark:bg-slate-800 hover:bg-slate-50 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs transition"
               >
                 Cancel
               </button>
@@ -1899,12 +2056,12 @@ export default function AdminPortalPage() {
                 type="button"
                 onClick={handleExecuteDecision}
                 disabled={!isValidCommand || processingDecision || (isReject && !rejectionReason.trim())}
-                className={`px-5 py-2 rounded-xl font-bold text-xs tracking-wide transition shadow-lg flex items-center gap-1.5 ${
+                className={`px-6 py-2.5 rounded-[10px] font-medium text-xs transition shadow-sm flex items-center gap-1.5 ${
                   !isValidCommand
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                     : isReject
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-[#006EC4] hover:bg-[#005A9E] text-white'
                 }`}
               >
                 {processingDecision ? (
@@ -1923,16 +2080,17 @@ export default function AdminPortalPage() {
         </div>
       )}
 
+
       {/* ==================================================================== */}
       {/* ADD STOCK MODAL (with Purchase Scrap split)                           */}
       {/* ==================================================================== */}
       {showAddStockModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/30 backdrop-blur-md">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-white dark:bg-[#152036] border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl p-5 sm:p-7 shadow-ims-modal space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Box className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Box className="w-5 h-5 text-[#006EC4]" />
                   Add Inventory &amp; Total Investment
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1941,7 +2099,7 @@ export default function AdminPortalPage() {
               </div>
               <button
                 onClick={() => setShowAddStockModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 <XCircle className="w-5 h-5" />
               </button>
@@ -1949,11 +2107,11 @@ export default function AdminPortalPage() {
 
             <form onSubmit={handleAddStock} className="space-y-4">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-300">1. Product Name *</label>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">1. Product Name <span className="text-red-500">*</span></label>
                 <button
                   type="button"
                   onClick={() => setStockUseNewProduct(!stockUseNewProduct)}
-                  className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 underline"
+                  className="text-[11px] font-semibold text-[#006EC4] hover:underline"
                 >
                   {stockUseNewProduct ? 'Select Existing Product' : '+ Enter New Product Name'}
                 </button>
@@ -1962,9 +2120,9 @@ export default function AdminPortalPage() {
               {stockUseNewProduct ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
-                    <input type="text" required value={stockProductName} onChange={(e) => setStockProductName(e.target.value)} placeholder="e.g. Galvanized Steel Sheet / MS Pipe" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" />
+                    <input type="text" required value={stockProductName} onChange={(e) => setStockProductName(e.target.value)} placeholder="e.g. Galvanized Steel Sheet / MS Pipe" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]" />
                   </div>
-                  <select value={stockCategory} onChange={(e) => setStockCategory(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                  <select value={stockCategory} onChange={(e) => setStockCategory(e.target.value)} className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3 py-2.5 text-xs text-slate-900 dark:text-white">
                     <option value="COIL">COIL</option>
                     <option value="PIPE">PIPE</option>
                     <option value="HINGES">HINGES</option>
@@ -1973,7 +2131,7 @@ export default function AdminPortalPage() {
                   </select>
                 </div>
               ) : (
-                <select value={stockVariantId} onChange={(e) => setStockVariantId(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
+                <select value={stockVariantId} onChange={(e) => setStockVariantId(e.target.value)} className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]">
                   {inventory.map((v, vIdx) => {
                     const vid = v.id || v.material_variant_id;
                     return (
@@ -1985,10 +2143,11 @@ export default function AdminPortalPage() {
                 </select>
               )}
 
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">2. Measurement Unit *</label>
-                  <select value={stockMeasurementUnit} onChange={(e) => setStockMeasurementUnit(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">2. Measurement Unit <span className="text-red-500">*</span></label>
+                  <select value={stockMeasurementUnit} onChange={(e) => setStockMeasurementUnit(e.target.value)} className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3 py-2.5 text-xs text-slate-900 dark:text-white font-mono">
                     <option value="kg">kg (Kilograms)</option>
                     <option value="ft">ft (Running Feet)</option>
                     <option value="pcs">pcs (Pieces)</option>
@@ -1997,49 +2156,49 @@ export default function AdminPortalPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">3. Quantity *</label>
-                  <input type="number" step="any" required value={stockPurchasedQty} onChange={(e) => setStockPurchasedQty(e.target.value)} placeholder={`e.g. 50 (${stockMeasurementUnit})`} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono" />
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">3. Quantity <span className="text-red-500">*</span></label>
+                  <input type="number" step="any" required value={stockPurchasedQty} onChange={(e) => setStockPurchasedQty(e.target.value)} placeholder={`e.g. 50 (${stockMeasurementUnit})`} className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-emerald-400 mb-1">4. Total Investment (₹) *</label>
-                  <input type="number" step="any" required value={stockTotalInvestment} onChange={(e) => setStockTotalInvestment(e.target.value)} placeholder="e.g. 15000" className="w-full bg-slate-950 border border-emerald-500/50 rounded-xl px-3 py-2 text-xs text-emerald-300 font-bold font-mono" />
+                  <label className="block text-xs font-medium text-[#006EC4] dark:text-sky-400 mb-1">4. Total Investment (₹) <span className="text-red-500">*</span></label>
+                  <input type="number" step="any" required value={stockTotalInvestment} onChange={(e) => setStockTotalInvestment(e.target.value)} placeholder="e.g. 15000" className="w-full bg-white dark:bg-slate-950 border border-[#006EC4] rounded-[10px] px-3.5 py-2.5 text-xs text-[#006EC4] dark:text-sky-300 font-bold font-mono" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Supplier</label>
-                  <input type="text" value={stockSupplier} onChange={(e) => setStockSupplier(e.target.value)} placeholder="Vendor name" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier</label>
+                  <input type="text" value={stockSupplier} onChange={(e) => setStockSupplier(e.target.value)} placeholder="Vendor name" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Invoice #</label>
-                  <input type="text" value={stockInvoice} onChange={(e) => setStockInvoice(e.target.value)} placeholder="Inv-1029" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice #</label>
+                  <input type="text" value={stockInvoice} onChange={(e) => setStockInvoice(e.target.value)} placeholder="Inv-1029" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Notes</label>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Notes</label>
                 <input
                   type="text"
                   value={stockNotes}
                   onChange={(e) => setStockNotes(e.target.value)}
                   placeholder="Optional delivery details..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAddStockModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition"
+                  className="px-5 py-2.5 rounded-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingStock}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs tracking-wide transition shadow flex items-center gap-1.5"
+                  className="px-6 py-2.5 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs transition shadow-sm flex items-center gap-1.5"
                 >
                   {savingStock ? (
                     <>
@@ -2056,16 +2215,17 @@ export default function AdminPortalPage() {
         </div>
       )}
 
+
       {/* ==================================================================== */}
-      {/* SCRAP SALE MODAL                                                     */}
+      {/* SCRAP SALE MODAL — Figma Blurred Backdrop & White Modal              */}
       {/* ==================================================================== */}
       {showScrapSaleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-md">
+          <div className="w-full max-w-md bg-white dark:bg-[#152036] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-ims-modal space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-amber-500" />
                   Record Floor Scrap Cash Sale
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -2074,7 +2234,7 @@ export default function AdminPortalPage() {
               </div>
               <button
                 onClick={() => setShowScrapSaleModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 <XCircle className="w-5 h-5" />
               </button>
@@ -2082,16 +2242,16 @@ export default function AdminPortalPage() {
 
             <form onSubmit={handleRecordScrapSale} className="space-y-4">
               {scrapSaleEntryId ? (
-                <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 text-xs">
-                  <span className="text-slate-400 block text-[10px] uppercase">Selling Scrap Batch</span>
-                  <span className="font-bold text-white text-sm">{scrapSaleItemLabel}</span>
-                  <span className="block text-amber-400 font-mono mt-0.5">
+                <div className="p-3.5 rounded-2xl bg-[#FFF4E5]/60 dark:bg-slate-950 border border-amber-300/60 dark:border-amber-500/30 text-xs">
+                  <span className="text-slate-500 block text-[10px] uppercase">Selling Scrap Batch</span>
+                  <span className="font-bold text-slate-900 dark:text-white text-sm">{scrapSaleItemLabel}</span>
+                  <span className="block text-amber-600 dark:text-amber-400 font-mono mt-0.5 font-semibold">
                     Available in this batch: {scrapSaleMaxQty.toFixed(2)} {scrapSaleUnit}
                   </span>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Select Unsold Scrap Material</label>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Select Unsold Scrap Material</label>
                   <select
                     value={scrapSaleVariantId}
                     onChange={(e) => {
@@ -2104,7 +2264,7 @@ export default function AdminPortalPage() {
                         setScrapSaleQtyKg(String(found.unsold_scrap));
                       }
                     }}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]"
                   >
                     {scrapSummary
                       .filter((s) => s.unsold_scrap > 0)
@@ -2117,10 +2277,11 @@ export default function AdminPortalPage() {
                 </div>
               )}
 
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Quantity Sold ({scrapSaleUnit}) <span className="text-amber-400">*</span>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Quantity Sold ({scrapSaleUnit}) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -2130,12 +2291,12 @@ export default function AdminPortalPage() {
                     value={scrapSaleQtyKg}
                     onChange={(e) => setScrapSaleQtyKg(e.target.value)}
                     placeholder="e.g. 25.5"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4] font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Sold Amount (₹) <span className="text-emerald-400">*</span>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Sold Amount (₹) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -2144,38 +2305,38 @@ export default function AdminPortalPage() {
                     value={scrapSaleAmountInr}
                     onChange={(e) => setScrapSaleAmountInr(e.target.value)}
                     placeholder="e.g. 5100"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-emerald-300 font-bold focus:outline-none focus:border-emerald-500 font-mono"
+                    className="w-full bg-white dark:bg-slate-950 border border-[#006EC4] rounded-[10px] px-3.5 py-2.5 text-xs text-[#006EC4] dark:text-emerald-300 font-bold focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Notes / Buyer (Optional)</label>
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Notes / Buyer (Optional)</label>
                 <input
                   type="text"
                   value={scrapSaleNotes}
                   onChange={(e) => setScrapSaleNotes(e.target.value)}
                   placeholder="e.g. Sold to scrap dealer"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-[10px] px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-[#006EC4]"
                 />
               </div>
 
-              <p className="text-[11px] text-slate-400 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+              <p className="text-[11px] text-slate-500 bg-[#F8FAFC] dark:bg-slate-950/70 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
                 Note: This scrap sale and ₹ amount will be recorded in the ERP scrap ledger.
               </p>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowScrapSaleModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition"
+                  className="px-5 py-2.5 rounded-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingScrapSale}
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs tracking-wide transition shadow flex items-center gap-1.5"
+                  className="px-6 py-2.5 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white font-medium text-xs transition shadow-sm flex items-center gap-1.5"
                 >
                   {savingScrapSale ? (
                     <>
@@ -2192,16 +2353,17 @@ export default function AdminPortalPage() {
         </div>
       )}
 
+
       {/* ==================================================================== */}
-      {/* BILL INSPECT DRAWER / MODAL                                          */}
+      {/* BILL INSPECT DRAWER / MODAL — Figma Blurred Backdrop & White Modal   */}
       {/* ==================================================================== */}
       {showInspectModal && inspectBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-md">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#152036] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-7 shadow-ims-modal space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#006EC4]" />
                   Bill #{inspectBill.bill_number} Details
                 </h3>
                 <p className="text-xs text-slate-400">
@@ -2210,36 +2372,36 @@ export default function AdminPortalPage() {
               </div>
               <button
                 onClick={() => setShowInspectModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#F8FAFC] dark:bg-slate-950 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 text-xs">
               <div>
-                <span className="text-slate-500 text-[10px] uppercase">Selling Price</span>
-                <p className="font-bold text-white font-mono">
+                <span className="text-slate-400 text-[10px] uppercase">Selling Price</span>
+                <p className="font-bold text-slate-900 dark:text-white font-mono">
                   ₹{parseFloat(inspectBill.selling_price_inr?.toString() || '0').toFixed(2)}
                 </p>
               </div>
               <div>
-                <span className="text-slate-500 text-[10px] uppercase">GST ({inspectBill.gst_rate || 18}%)</span>
-                <p className="font-bold text-slate-300 font-mono">
+                <span className="text-slate-400 text-[10px] uppercase">GST ({inspectBill.gst_rate || 18}%)</span>
+                <p className="font-bold text-slate-700 dark:text-slate-300 font-mono">
                   ₹{parseFloat(inspectBill.gst_amount_inr?.toString() || '0').toFixed(2)}
                 </p>
               </div>
               <div>
-                <span className="text-slate-500 text-[10px] uppercase">Final Total</span>
-                <p className="font-bold text-emerald-400 font-mono">
+                <span className="text-slate-400 text-[10px] uppercase">Final Total</span>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
                   ₹{parseFloat(inspectBill.final_total_inr?.toString() || '0').toFixed(2)}
                 </p>
               </div>
               <div>
-                <span className="text-slate-500 text-[10px] uppercase">Status</span>
-                <p className="font-bold text-white uppercase">{inspectBill.status}</p>
+                <span className="text-slate-400 text-[10px] uppercase">Status</span>
+                <p className="font-bold text-[#006EC4] dark:text-white uppercase">{inspectBill.status}</p>
                 {inspectBill.decided_by_username && (
-                  <p className="text-[11px] text-emerald-400 font-mono mt-0.5">
+                  <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
                     by @{inspectBill.decided_by_username}
                   </p>
                 )}
@@ -2247,16 +2409,17 @@ export default function AdminPortalPage() {
             </div>
 
             {inspectBill.rejection_reason && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400">
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-xs text-rose-600 dark:text-rose-400">
                 <strong>Rejection Reason:</strong> {inspectBill.rejection_reason}
               </div>
             )}
 
+
             <div className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Line Items</span>
-              <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/40">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Line Items</span>
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 ims-scrollbar">
                 <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800">
+                  <thead className="bg-[#F4F6F9] dark:bg-slate-900 text-slate-600 dark:text-slate-400 text-[10px] uppercase border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-3 py-2">Material</th>
                       <th className="px-3 py-2">Dimensions</th>
@@ -2265,22 +2428,22 @@ export default function AdminPortalPage() {
                       <th className="px-3 py-2 text-right">Line Cost</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/50 font-mono text-[11px]">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 font-mono text-[11px]">
                     {inspectBill.items?.map((item, insIdx) => (
                       <tr key={item.id ? `${item.id}-${insIdx}` : `inspect-item-${insIdx}`}>
-                        <td className="px-3 py-2 font-sans font-medium text-slate-200">
+                        <td className="px-3 py-2 font-sans font-medium text-slate-900 dark:text-slate-200">
                           {item.material_name}
                         </td>
-                        <td className="px-3 py-2 text-slate-400">
+                        <td className="px-3 py-2 text-slate-500">
                           {item.input_length && item.input_breadth ? `${item.input_length}' × ${item.input_breadth}'` : '-'}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-300">
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
                           {item.calculated_feet ? `${item.calculated_feet} ft` : '-'}
                         </td>
-                        <td className="px-3 py-2 text-right font-bold text-emerald-400">
+                        <td className="px-3 py-2 text-right font-bold text-[#006EC4] dark:text-sky-400">
                           {item.unit === 'GRAM' ? `${(item.actual_quantity_consumed / 1000).toFixed(2)} kg` : `${item.actual_quantity_consumed} ${item.unit}`}
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-300">
+                        <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">
                           ₹{parseFloat(item.line_cost_inr?.toString() || '0').toFixed(0)}
                         </td>
                       </tr>
@@ -2290,18 +2453,18 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => openAndPrintTaxInvoice(inspectBill, 'Original Copy')}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition"
+                  className="px-4 py-2 rounded-[10px] bg-[#006EC4] hover:bg-[#005A9E] text-white text-xs font-medium flex items-center gap-1.5 shadow-sm transition"
                 >
                   <Printer className="w-4 h-4" />
                   Download / Print (Original Copy)
                 </button>
                 <button
                   onClick={() => openAndPrintTaxInvoice(inspectBill, 'Duplicate Copy')}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition"
+                  className="px-4 py-2 rounded-[10px] bg-[#EEF5FC] dark:bg-slate-800 hover:bg-[#D6E8F8] text-[#006EC4] dark:text-sky-300 border border-[#006EC4]/30 text-xs font-medium flex items-center gap-1.5 transition"
                 >
                   <Printer className="w-4 h-4" />
                   Download / Print (Duplicate Copy)
@@ -2309,7 +2472,7 @@ export default function AdminPortalPage() {
               </div>
               <button
                 onClick={() => setShowInspectModal(false)}
-                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                className="w-full sm:w-auto px-5 py-2.5 sm:py-2 rounded-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 text-slate-700 dark:text-slate-300 text-xs font-medium transition"
               >
                 Close
               </button>
@@ -2318,14 +2481,15 @@ export default function AdminPortalPage() {
         </div>
       )}
 
+
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur border-t border-slate-800 pb-safe">
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-[#111C33]/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 pb-safe">
         <div className="grid grid-cols-6 gap-0.5 p-1">
           <button
             type="button"
             onClick={() => setActiveTab('queue')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition relative ${
-              activeTab === 'queue' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'queue' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <Clock className="w-4 h-4 mb-0.5" />
@@ -2338,7 +2502,7 @@ export default function AdminPortalPage() {
             type="button"
             onClick={() => setActiveTab('inventory')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition ${
-              activeTab === 'inventory' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'inventory' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <Box className="w-4 h-4 mb-0.5" />
@@ -2348,7 +2512,7 @@ export default function AdminPortalPage() {
             type="button"
             onClick={() => setActiveTab('history')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition ${
-              activeTab === 'history' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'history' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <FileText className="w-4 h-4 mb-0.5" />
@@ -2358,7 +2522,7 @@ export default function AdminPortalPage() {
             type="button"
             onClick={() => setActiveTab('scrap')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition ${
-              activeTab === 'scrap' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'scrap' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <TrendingUp className="w-4 h-4 mb-0.5" />
@@ -2368,7 +2532,7 @@ export default function AdminPortalPage() {
             type="button"
             onClick={() => setActiveTab('workers')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition ${
-              activeTab === 'workers' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'workers' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <UserCheck className="w-4 h-4 mb-0.5" />
@@ -2378,7 +2542,7 @@ export default function AdminPortalPage() {
             type="button"
             onClick={() => setActiveTab('masters')}
             className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[10px] font-semibold transition ${
-              activeTab === 'masters' ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400'
+              activeTab === 'masters' ? 'bg-[#006EC4] text-white' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             <Layers className="w-4 h-4 mb-0.5" />
@@ -2386,6 +2550,8 @@ export default function AdminPortalPage() {
           </button>
         </div>
       </nav>
+      </div>
     </div>
   );
 }
+
