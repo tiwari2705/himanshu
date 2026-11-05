@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'IMS - Inventory & Billing System',
-  description: 'Mobile-First Dual-Portal Inventory Management, Billing & Google Sheets Sync System',
+  description: 'Manufacturing ERP, Inventory Management & Billing System',
 }
 
 export const viewport: Viewport = {

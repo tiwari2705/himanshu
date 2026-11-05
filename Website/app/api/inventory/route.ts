@@ -273,29 +273,51 @@ export async function POST(request: NextRequest) {
       product_name: r.material_name,
       category: r.category,
       unit: r.display_unit || r.base_unit,
+      total_stock: parseFloat(r.total_stock_display ?? r.total_stock ?? '0'),
+      used_stock: parseFloat(r.used_stock_display ?? r.used_stock ?? '0'),
+      remaining_stock: parseFloat(r.remaining_stock_display ?? r.current_stock_display ?? r.current_stock ?? '0'),
+      normal_used_stock: parseFloat(r.normal_used_stock_display ?? '0'),
+      secret_used_stock: parseFloat(r.secret_used_stock_display ?? '0'),
       current_stock: parseFloat(r.current_stock_display ?? r.current_stock ?? '0'),
       total_investment_inr: parseFloat(r.total_investment_inr || '0'),
       stock_valuation_inr: parseFloat(r.stock_valuation_inr || '0'),
     }));
 
     const scrapKg = scrapGrams > 0 ? Number((scrapGrams / 1000.0).toFixed(4)) : 0;
+    const ledgerRow = ledgerResult.rows[0];
 
+    let sheetSynced = false;
+    let sheetSyncError: string | undefined;
     try {
-      await syncInventoryAddition({
+      const invSync = await syncInventoryAddition({
+        entry_id: ledgerRow.id,
         product_name: targetVariant.name,
         category: targetVariant.category,
         unit: displayUnitLabel.toUpperCase(),
         quantity_added: inputQty,
         total_investment_inr: Number(finalTotalInvestment.toFixed(2)),
+        total_stock: updatedItem
+          ? parseFloat(updatedItem.total_stock_display ?? updatedItem.total_stock ?? '0')
+          : inputQty,
+        used_stock: updatedItem
+          ? parseFloat(updatedItem.used_stock_display ?? updatedItem.used_stock ?? '0')
+          : 0,
+        remaining_stock: updatedItem
+          ? parseFloat(updatedItem.remaining_stock_display ?? updatedItem.current_stock_display ?? '0')
+          : inputQty,
         current_stock: updatedItem
           ? parseFloat(updatedItem.current_stock_display ?? updatedItem.current_stock ?? '0')
           : inputQty,
+        entry_date: ledgerRow.created_at ? new Date(ledgerRow.created_at).toISOString() : new Date().toISOString(),
         notes: autoNotes,
         scrap_weight_kg: scrapKg,
         inventory_snapshot: inventorySnapshot,
       });
-    } catch (sheetErr) {
+      sheetSynced = invSync.success;
+      sheetSyncError = invSync.error;
+    } catch (sheetErr: any) {
       console.warn('Inventory addition Google Sheets sync notice:', sheetErr);
+      sheetSyncError = sheetErr?.message;
     }
 
     if (scrapKg > 0) {
@@ -312,7 +334,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      entry: ledgerResult.rows[0],
+      entry: ledgerRow,
       product_name: targetVariant.name,
       measurement_unit: displayUnitLabel,
       quantity_added: inputQty,
@@ -321,11 +343,63 @@ export async function POST(request: NextRequest) {
       total_investment_inr: Number(finalTotalInvestment.toFixed(2)),
       scrap_grams: scrapGrams,
       scrap_weight_kg_logged: scrapKg,
+      sheet_synced: sheetSynced,
+      sheet_error: sheetSyncError,
     });
   } catch (error: any) {
     console.error('Inventory receipt error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to record stock purchase' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const token = request.cookies.get('ims_session')?.value;
+    const payload = verifyToken(token || '');
+
+    if (!payload || payload.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, material_variant_id, bom_weight_per_foot_grams } = body;
+
+    const targetId = id || material_variant_id;
+    if (!targetId) {
+      return NextResponse.json({ error: 'Material Variant ID is required' }, { status: 400 });
+    }
+
+    const numBom = parseFloat(bom_weight_per_foot_grams);
+    if (isNaN(numBom) || numBom < 0) {
+      return NextResponse.json(
+        { error: 'Valid non-negative BOM Weight / Foot (g/ft) is required' },
+        { status: 400 }
+      );
+    }
+
+    const res = await query(
+      `UPDATE material_variants
+       SET bom_weight_per_foot_grams = $1
+       WHERE id = $2
+       RETURNING *`,
+      [numBom, targetId]
+    );
+
+    if (res.rows.length === 0) {
+      return NextResponse.json({ error: 'Material variant not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      variant: res.rows[0],
+    });
+  } catch (error: any) {
+    console.error('Update BOM weight error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to update BOM weight' },
       { status: 500 }
     );
   }

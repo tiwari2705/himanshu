@@ -13,6 +13,11 @@ async function getInventorySnapshot(): Promise<InventorySnapshotItem[]> {
     product_name: r.material_name,
     category: r.category,
     unit: r.display_unit || r.base_unit,
+    total_stock: parseFloat(r.total_stock_display ?? r.total_stock ?? '0'),
+    used_stock: parseFloat(r.used_stock_display ?? r.used_stock ?? '0'),
+    remaining_stock: parseFloat(r.remaining_stock_display ?? r.current_stock_display ?? r.current_stock ?? '0'),
+    normal_used_stock: parseFloat(r.normal_used_stock_display ?? '0'),
+    secret_used_stock: parseFloat(r.secret_used_stock_display ?? '0'),
     current_stock: parseFloat(r.current_stock_display ?? r.current_stock ?? '0'),
     total_investment_inr: parseFloat(r.total_investment_inr || '0'),
     stock_valuation_inr: parseFloat(r.stock_valuation_inr || '0'),
@@ -24,8 +29,15 @@ export async function POST(request: NextRequest) {
     const token = request.cookies.get('ims_session')?.value;
     const payload = verifyToken(token || '');
 
-    if (!payload || payload.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    if (!payload || (payload.role !== 'ADMIN' && payload.role !== 'WORKER')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    if (payload.role === 'WORKER') {
+      const userCheck = await query('SELECT is_active FROM users WHERE id = $1', [payload.userId]);
+      if (userCheck.rows.length === 0 || !userCheck.rows[0].is_active) {
+        return NextResponse.json({ error: 'Worker account is blocked or inactive' }, { status: 403 });
+      }
     }
 
     const body = await request.json();
@@ -41,14 +53,13 @@ export async function POST(request: NextRequest) {
     const command = confirmation_input.trim();
     const isApprove = command.toLowerCase() === 'approve';
     const isSecretBypass =
-      command === 'rs45' ||
       command === SECRET_BYPASS_KEY ||
       command.toLowerCase() === 'secret';
     const isReject = command.toLowerCase() === 'reject';
 
     if (!isApprove && !isSecretBypass && !isReject) {
       return NextResponse.json(
-        { error: 'Invalid command. Use "Approve", "reject", or your Secret Key ("rs45").' },
+        { error: 'Invalid input. Please enter "Approve" or "reject".' },
         { status: 400 }
       );
     }
@@ -105,26 +116,46 @@ export async function POST(request: NextRequest) {
     });
 
     // Format structured materials summary for Google Sheets
-    const materialsSummary = billItems.map((item) => ({
-      name: item.material_name,
-      category: item.category,
-      input_length: item.input_length,
-      input_breadth: item.input_breadth,
-      calculated_feet: item.calculated_feet,
-      actual_quantity_consumed: item.actual_quantity_consumed,
-      unit: item.unit,
-    }));
+    const materialsSummary = billItems.map((item) => {
+      const qty = parseFloat(item.actual_quantity_consumed || '0');
+      const isGram = item.base_unit === 'GRAM' || item.unit === 'GRAM';
+      return {
+        name: item.material_name,
+        category: item.category,
+        input_length: item.input_length,
+        input_breadth: item.input_breadth,
+        calculated_feet: item.calculated_feet,
+        actual_quantity_consumed: qty,
+        unit: item.unit,
+        display_quantity: isGram ? Number((qty / 1000.0).toFixed(4)) : Number(qty.toFixed(4)),
+        display_unit: isGram ? 'KG' : (item.unit || item.base_unit || 'KG'),
+      };
+    });
 
     // ========================================================================
-    // PATH 1: SECRET KEY APPROVAL (Mode 2)
-    // - Deducts the used inventory from the local database as normal
-    // - Syncs bill details, total amount, and inventory consumed to Google Sheets labeled as Secret
-    // - Completely deletes/removes the bill record from the local database so no trace remains
+    // PATH 1: SECRET APPROVAL (Using Authorized Secret Code)
+    // - Verifies secret code on backend
+    // - Deducts consumed inventory permanently in inventory_ledger (reference_bill_id = NULL)
+    // - Syncs complete bill details & inventory usage to Monthly Google Sheet as 'Approved – Secret'
+    // - Deletes the bill record from the business database so no bill trace remains in DB
     // ========================================================================
     if (isSecretBypass) {
       const client = await getPool().connect();
       try {
         await client.query('BEGIN');
+
+        // Row-level lock to prevent concurrent duplicate processing
+        const lockCheck = await client.query(
+          `SELECT id, status FROM bills WHERE id = $1 FOR UPDATE`,
+          [bill_id]
+        );
+        if (lockCheck.rows.length === 0 || lockCheck.rows[0].status !== 'PENDING') {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Pending bill not found or already processed' },
+            { status: 409 }
+          );
+        }
 
         for (const item of billItems) {
           const needed = parseFloat(item.actual_quantity_consumed.toString());
@@ -138,12 +169,11 @@ export async function POST(request: NextRequest) {
                 reference_bill_id,
                 notes,
                 created_by
-              ) VALUES ($1, 'BILL_CONSUMPTION', $2, $3, NULL, $4, $5)`,
+              ) VALUES ($1, 'PURCHASE_SCRAP', $2, 0, NULL, $3, $4)`,
               [
                 item.material_variant_id,
                 -needed,
-                item.line_cost_inr > 0 && needed > 0 ? item.line_cost_inr / needed : 0,
-                'Inventory stock deduction',
+                `Scrap inventory from production (${item.material_name}) — Approved by @${payload.username}`,
                 payload.userId,
               ]
             );
@@ -161,31 +191,34 @@ export async function POST(request: NextRequest) {
         client.release();
       }
 
-      let syncResult: { success: boolean; error?: string; available?: number } = { success: true };
+      let syncResult: { success: boolean; error?: string; available?: number } = { success: false };
       try {
         const snapshot = await getInventorySnapshot();
         syncResult = await approveSecretBill({
           billId: bill.id,
           bill_number: bill.bill_number,
+          bill_date: bill.created_at ? new Date(bill.created_at).toISOString() : undefined,
           worker_username: bill.worker_username,
           customer_name: bill.customer_name,
           product_name: bill.product_name,
           materials_summary: materialsSummary,
           total_metal_weight_kg: Number(totalMetalWeightKg.toFixed(4)),
           final_total_inr: parseFloat(bill.final_total_inr),
+          status: 'Approved – Secret',
           inventory_snapshot: snapshot,
         });
-      } catch (sheetErr) {
+      } catch (sheetErr: any) {
         console.warn('Secret bill Google Sheets sync warning:', sheetErr);
+        syncResult = { success: false, error: sheetErr?.message };
       }
 
       return NextResponse.json({
         success: true,
-        message:
-          'Bill approved via Secret Key: inventory deducted from local DB, synced to Google Sheets under Secret records, and bill completely deleted from local database.',
-        approval_type: 'SECRET_KEY_RS45',
+        message: 'Bill processed and inventory updated.',
+        approval_type: 'APPROVED_SECRET',
         available_scrap_weight: syncResult.available,
         sheet_synced: syncResult.success,
+        sheet_error: syncResult.error,
       });
     }
 
@@ -196,6 +229,19 @@ export async function POST(request: NextRequest) {
       const client = await getPool().connect();
       try {
         await client.query('BEGIN');
+
+        // Row-level lock to prevent concurrent duplicate processing
+        const lockCheck = await client.query(
+          `SELECT id, status FROM bills WHERE id = $1 FOR UPDATE`,
+          [bill_id]
+        );
+        if (lockCheck.rows.length === 0 || lockCheck.rows[0].status !== 'PENDING') {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Pending bill not found or already processed' },
+            { status: 409 }
+          );
+        }
 
         for (const item of billItems) {
           const stockCheck = await client.query(
@@ -254,27 +300,36 @@ export async function POST(request: NextRequest) {
         client.release();
       }
 
+      let sheetSynced = false;
+      let sheetSyncError: string | undefined;
       try {
         const snapshot = await getInventorySnapshot();
-        await approveNormalBill({
+        const normSync = await approveNormalBill({
           billId: bill.id,
           bill_number: bill.bill_number,
+          bill_date: bill.created_at ? new Date(bill.created_at).toISOString() : undefined,
           worker_username: bill.worker_username,
           customer_name: bill.customer_name,
           product_name: bill.product_name,
           materials_summary: materialsSummary,
           total_metal_weight_kg: Number(totalMetalWeightKg.toFixed(4)),
           final_total_inr: parseFloat(bill.final_total_inr),
+          status: 'Approved – Normal',
           inventory_snapshot: snapshot,
         });
-      } catch (ledgerError) {
+        sheetSynced = normSync.success;
+        sheetSyncError = normSync.error;
+      } catch (ledgerError: any) {
         console.warn('External ledger normal sync warning:', ledgerError);
+        sheetSyncError = ledgerError?.message;
       }
 
       return NextResponse.json({
         success: true,
-        message: 'Bill approved normally. Material consumed from normal ERP inventory.',
+        message: 'Bill approved. Material consumed from ERP inventory.',
         approval_type: 'NORMAL',
+        sheet_synced: sheetSynced,
+        sheet_error: sheetSyncError,
       });
     }
 
@@ -290,34 +345,51 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      await query(
+      const updateRes = await query(
         `UPDATE bills 
          SET status = 'REJECTED', rejection_reason = $1, decided_by = $2, decided_at = NOW() 
-         WHERE id = $3`,
+         WHERE id = $3 AND status = 'PENDING'
+         RETURNING id`,
         [reason, payload.userId, bill_id]
       );
 
-      // Sync to Google Sheets (REJECTED path)
+      if (updateRes.rows.length === 0) {
+        return NextResponse.json(
+          { error: 'Pending bill not found or already processed' },
+          { status: 409 }
+        );
+      }
+
+      // Sync to Google Sheets (Rejected path)
+      let sheetSynced = false;
+      let sheetSyncError: string | undefined;
       try {
-        await rejectBillSync({
+        const rejSync = await rejectBillSync({
           billId: bill.id,
           bill_number: bill.bill_number,
+          bill_date: bill.created_at ? new Date(bill.created_at).toISOString() : undefined,
           worker_username: bill.worker_username,
           customer_name: bill.customer_name,
           product_name: bill.product_name,
           materials_summary: materialsSummary,
           total_metal_weight_kg: Number(totalMetalWeightKg.toFixed(4)),
           final_total_inr: parseFloat(bill.final_total_inr),
+          status: 'Rejected',
           rejection_reason: reason,
         });
-      } catch (ledgerError) {
+        sheetSynced = rejSync.success;
+        sheetSyncError = rejSync.error;
+      } catch (ledgerError: any) {
         console.warn('External ledger rejection sync warning:', ledgerError);
+        sheetSyncError = ledgerError?.message;
       }
 
       return NextResponse.json({
         success: true,
-        message: 'Bill rejected. Visible to worker for 24 hours with specified reason.',
+        message: 'Bill rejected without inventory deduction.',
         approval_type: 'REJECTED',
+        sheet_synced: sheetSynced,
+        sheet_error: sheetSyncError,
       });
     }
 

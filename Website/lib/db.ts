@@ -1,42 +1,71 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 
-let pool: Pool | null = null;
+const globalForDb = globalThis as unknown as {
+  pgPool: Pool | undefined;
+};
+
+function createPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL not configured');
+  }
+
+  const newPool = new Pool({
+    connectionString: databaseUrl,
+    max: 10,
+    idleTimeoutMillis: 20000,
+    connectionTimeoutMillis: 30000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  newPool.on('error', (err) => {
+    console.warn('Database pool idle client notice:', err.message);
+  });
+
+  return newPool;
+}
 
 export function getPool(): Pool {
-  if (!pool) {
-    const databaseUrl = process.env.DATABASE_URL;
-
-    if (databaseUrl) {
-      pool = new Pool({
-        connectionString: databaseUrl,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      });
-    } else {
-      throw new Error('DATABASE_URL not configured');
-    }
-
-    pool.on('error', (err) => {
-      console.error('Unexpected database pool error:', err);
-    });
+  if (!globalForDb.pgPool) {
+    globalForDb.pgPool = createPool();
   }
-  return pool;
+  return globalForDb.pgPool;
 }
 
 export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
-  const client = await getPool().connect();
-  try {
-    return await client.query<T>(text, params);
-  } finally {
-    client.release();
+  let lastError: any;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await getPool().query<T>(text, params);
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || '').toLowerCase();
+      const isTransient =
+        msg.includes('timeout') ||
+        msg.includes('terminated') ||
+        msg.includes('econnreset') ||
+        msg.includes('connection') ||
+        msg.includes('closed');
+
+      if (isTransient && attempt < 3) {
+        console.warn(`DB query transient notice (attempt ${attempt}/3), retrying...`);
+        try {
+          await globalForDb.pgPool?.end();
+        } catch (_) {}
+        globalForDb.pgPool = createPool();
+        continue;
+      }
+      throw err;
+    }
   }
+  throw lastError;
 }
 
 // ============================================================================

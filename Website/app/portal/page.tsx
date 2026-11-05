@@ -16,8 +16,12 @@ import {
   Layers,
   ChevronRight,
   TrendingUp,
+  ShieldCheck,
+  Printer,
+  RefreshCw,
 } from 'lucide-react';
 import { calculateRunningFeet, calculateGst, FrameFormulaType } from '@/lib/calculations';
+import { INDIAN_STATES, getDefaultHsnAndUom, openAndPrintTaxInvoice } from '@/lib/invoice-template';
 
 interface Product {
   id: string;
@@ -39,6 +43,9 @@ interface MaterialVariant {
 interface MaterialLineState {
   productId: string;
   materialVariantId: string;
+  hsnCode: string;
+  uom: string;
+  rate: string;
   pieceCount: string;
   inputLength: string;
   inputBreadth: string;
@@ -57,6 +64,7 @@ interface BillItem {
   actual_quantity_consumed: number;
   unit: string;
   line_cost_inr: number;
+  item_details?: any;
 }
 
 interface Bill {
@@ -71,6 +79,9 @@ interface Bill {
   final_total_inr: number;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   rejection_reason: string | null;
+  invoice_details?: any;
+  decided_by_username?: string | null;
+  decided_by_role?: string | null;
   decided_at: string | null;
   created_at: string;
   items?: BillItem[];
@@ -85,7 +96,7 @@ export default function WorkerPortalPage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form states for Bill Generation
+  // Form states for Bill Generation (including Vishawkarma Steel Udyog Tax Invoice fields)
   const [selectedProductId, setSelectedProductId] = useState('');
   const [showNewProductBox, setShowNewProductBox] = useState(false);
   const [newProductName, setNewProductName] = useState('');
@@ -93,13 +104,79 @@ export default function WorkerPortalPage() {
   const [savingNewProduct, setSavingNewProduct] = useState(false);
 
   const [customerName, setCustomerName] = useState('');
+  const [partyAddress, setPartyAddress] = useState('');
+  const [partyGstin, setPartyGstin] = useState('');
+  const [partyState, setPartyState] = useState('Haryana');
+  const [partyStateCode, setPartyStateCode] = useState('06');
+  const [invoiceType, setInvoiceType] = useState('Credit');
+  const [transportMode, setTransportMode] = useState('Intra');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [placeOfSupply, setPlaceOfSupply] = useState('');
+  const [narration, setNarration] = useState('');
+
   const [sellingPrice, setSellingPrice] = useState('');
   const [gstRate, setGstRate] = useState('0');
   const [materialLines, setMaterialLines] = useState<MaterialLineState[]>([
-    { productId: '', materialVariantId: '', pieceCount: '1', inputLength: '7', inputBreadth: '3', inputWeightKg: '', quantityConsumed: '', itemPrice: '' },
+    { productId: '', materialVariantId: '', hsnCode: '7308', uom: 'RMT', rate: '', pieceCount: '1', inputLength: '7', inputBreadth: '3', inputWeightKg: '', quantityConsumed: '', itemPrice: '' },
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Worker Bill Decision Gateway Modal states (Approve / reject / secret key)
+  const [selectedDecisionBill, setSelectedDecisionBill] = useState<Bill | null>(null);
+  const [showDecisionModal, setShowDecisionModal] = useState(false);
+  const [commandInput, setCommandInput] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [processingDecision, setProcessingDecision] = useState(false);
+
+  const openDecisionModal = (bill: Bill) => {
+    setSelectedDecisionBill(bill);
+    setCommandInput('');
+    setRejectionReason('');
+    setShowDecisionModal(true);
+  };
+
+  const trimmedCommand = commandInput.trim();
+  const isApproveCmd = trimmedCommand.toLowerCase() === 'approve';
+  const isRejectCmd = trimmedCommand.toLowerCase() === 'reject';
+  const isValidDecisionCmd = trimmedCommand.length > 0;
+
+  const handleExecuteDecision = async () => {
+    if (!selectedDecisionBill || !isValidDecisionCmd) return;
+    if (isRejectCmd && !rejectionReason.trim()) {
+      alert('Please enter a rejection reason.');
+      return;
+    }
+
+    setProcessingDecision(true);
+    try {
+      const res = await fetch('/api/admin/approve-bill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bill_id: selectedDecisionBill.id,
+          confirmation_input: trimmedCommand,
+          rejection_reason: isRejectCmd ? rejectionReason.trim() : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Failed to process bill decision.');
+        return;
+      }
+
+      setShowDecisionModal(false);
+      setSelectedDecisionBill(null);
+      setCommandInput('');
+      setRejectionReason('');
+      await Promise.all([loadCatalog(), loadBills()]);
+    } catch {
+      alert('Network error processing bill decision.');
+    } finally {
+      setProcessingDecision(false);
+    }
+  };
 
   useEffect(() => {
     checkAuth();
@@ -172,6 +249,9 @@ export default function WorkerPortalPage() {
       {
         productId: selectedProductId !== 'OTHER' ? selectedProductId : '',
         materialVariantId: '',
+        hsnCode: '7308',
+        uom: 'RMT',
+        rate: '',
         pieceCount: '1',
         inputLength: '7',
         inputBreadth: '3',
@@ -191,18 +271,46 @@ export default function WorkerPortalPage() {
     const updated = [...materialLines];
     updated[index] = { ...updated[index], [field]: value };
 
-    // If user selected "OTHER" in a row's productId, open the inline new product creator
     if (field === 'productId' && value === 'OTHER') {
       setShowNewProductBox(true);
     }
 
-    // If user selected a discrete material (PAINT / HINGES), auto-set productId to 'DIRECT'
     if (field === 'materialVariantId') {
       const chosenV = variants.find((v) => v.id === value);
-      if (chosenV && (chosenV.category === 'PAINT' || chosenV.category === 'HINGES')) {
-        updated[index].productId = 'DIRECT';
-      } else if (chosenV && (!updated[index].productId || updated[index].productId === 'DIRECT')) {
-        updated[index].productId = products[0]?.id || '';
+      if (chosenV) {
+        const def = getDefaultHsnAndUom(chosenV.category, chosenV.name);
+        updated[index].hsnCode = def.hsn;
+        updated[index].uom = def.uom;
+        if (chosenV.category === 'PAINT' || chosenV.category === 'HINGES') {
+          updated[index].productId = 'DIRECT';
+        } else if (!updated[index].productId || updated[index].productId === 'DIRECT') {
+          updated[index].productId = products[0]?.id || '';
+        }
+      }
+    }
+
+    // Auto-calculate Item Price when Rate is entered
+    if (field === 'rate') {
+      const rateNum = parseFloat(value);
+      const line = updated[index];
+      const chosenV = variants.find((v) => v.id === line.materialVariantId);
+      const lineProd = products.find((p) => p.id === (line.productId || selectedProductId));
+      const lineFormula: FrameFormulaType = lineProd ? lineProd.frame_formula_type : 'DOOR_2L_PLUS_B';
+      const pcs = Math.max(1, parseInt(line.pieceCount || '1', 10) || 1);
+      const isDim = chosenV?.category === 'COIL' || chosenV?.category === 'PIPE' || chosenV?.base_unit === 'FEET';
+      const feet = isDim
+        ? calculateRunningFeet(lineFormula, parseFloat(line.inputLength) || 0, parseFloat(line.inputBreadth) || 0, pcs)
+        : 0;
+      const grams = isDim ? feet * (Number(chosenV?.bom_weight_per_foot_grams) || 0) : 0;
+      const weightKg = parseFloat(line.inputWeightKg) > 0 ? parseFloat(line.inputWeightKg) : grams / 1000.0;
+      const billQty =
+        line.uom.toUpperCase() === 'RMT' || line.uom.toUpperCase() === 'FT'
+          ? feet
+          : line.uom.toLowerCase() === 'kg'
+          ? weightKg
+          : parseFloat(line.quantityConsumed) || pcs;
+      if (!isNaN(rateNum) && rateNum > 0 && billQty > 0) {
+        updated[index].itemPrice = (rateNum * billQty).toFixed(2);
       }
     }
 
@@ -313,6 +421,60 @@ export default function WorkerPortalPage() {
     numericGstRate
   );
 
+  const handlePreviewDraftInvoice = () => {
+    const draftBill = {
+      bill_number: 'DRAFT-PREVIEW',
+      customer_name: customerName.trim() || 'Party Name',
+      selling_price_inr: effectiveBaseAmount,
+      gst_rate: numericGstRate,
+      gst_amount_inr: gstAmountInr,
+      final_total_inr: finalTotalInr,
+      created_at: new Date().toISOString(),
+      invoice_details: {
+        invoice_type: invoiceType,
+        party_name: customerName.trim() || 'Party Name',
+        party_address: partyAddress.trim() || '-',
+        party_gstin: partyGstin.trim() || '-',
+        party_state: partyState,
+        party_state_code: partyStateCode,
+        transport_mode: transportMode,
+        vehicle_number: vehicleNumber.trim() || '-',
+        place_of_supply: placeOfSupply.trim() || partyAddress.trim() || partyState,
+        narration: narration.trim(),
+      },
+      items: materialLines.map((line) => {
+        const v = variants.find((item) => item.id === line.materialVariantId);
+        const lineProd = products.find((p) => p.id === (line.productId || selectedProductId));
+        const lineFormula: FrameFormulaType = lineProd ? lineProd.frame_formula_type : 'DOOR_2L_PLUS_B';
+        const pcs = Math.max(1, parseInt(line.pieceCount || '1', 10) || 1);
+        const isDim = v?.category === 'COIL' || v?.category === 'PIPE' || v?.base_unit === 'FEET';
+        const feet = isDim ? calculateRunningFeet(lineFormula, parseFloat(line.inputLength) || 0, parseFloat(line.inputBreadth) || 0, pcs) : 0;
+        const grams = isDim ? feet * (Number(v?.bom_weight_per_foot_grams) || 0) : 0;
+        const weightKg = parseFloat(line.inputWeightKg) > 0 ? parseFloat(line.inputWeightKg) : grams / 1000.0;
+        const billQty = line.uom.toUpperCase() === 'RMT' || line.uom.toUpperCase() === 'FT' ? feet : line.uom.toLowerCase() === 'kg' ? weightKg : parseFloat(line.quantityConsumed) || pcs;
+        const lineAmt = parseFloat(line.itemPrice) || 0;
+        return {
+          material_name: v?.name || 'ITEM',
+          category: v?.category || 'COIL',
+          calculated_feet: feet,
+          actual_quantity_consumed: v?.base_unit === 'GRAM' ? weightKg * 1000 : billQty,
+          unit: v?.base_unit || 'KG',
+          item_details: {
+            item_detail: lineProd && line.productId !== 'DIRECT' ? `${lineProd.name} (${v?.name || ''})` : v?.name || 'ITEM',
+            hsn_code: line.hsnCode || '7308',
+            billing_qty: billQty || 1,
+            uom: line.uom || 'RMT',
+            rate: parseFloat(line.rate) || (billQty > 0 ? lineAmt / billQty : lineAmt),
+            gst_percent: numericGstRate,
+            gst_amount: lineAmt * (numericGstRate / 100.0),
+            taxable_amount: lineAmt,
+          },
+        };
+      }),
+    };
+    openAndPrintTaxInvoice(draftBill, 'Draft Preview');
+  };
+
   const handleSubmitBill = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -350,19 +512,43 @@ export default function WorkerPortalPage() {
         customer_name: customerName.trim(),
         selling_price_inr: effectiveBaseAmount,
         gst_rate: numericGstRate,
-        items: materialLines.map((line) => ({
-          product_id:
-            line.productId && line.productId !== 'DIRECT' && line.productId !== 'OTHER'
-              ? line.productId
-              : resolvedPrimaryProductId,
-          material_variant_id: line.materialVariantId,
-          piece_count: line.pieceCount ? parseInt(line.pieceCount, 10) : 1,
-          input_length: line.inputLength ? parseFloat(line.inputLength) : undefined,
-          input_breadth: line.inputBreadth ? parseFloat(line.inputBreadth) : undefined,
-          input_weight_kg: line.inputWeightKg ? parseFloat(line.inputWeightKg) : undefined,
-          quantity_consumed: line.quantityConsumed ? parseFloat(line.quantityConsumed) : undefined,
-          item_price_inr: line.itemPrice ? parseFloat(line.itemPrice) : undefined,
-        })),
+        invoice_details: {
+          invoice_type: invoiceType,
+          party_name: customerName.trim(),
+          party_address: partyAddress.trim(),
+          party_gstin: partyGstin.trim(),
+          party_state: partyState,
+          party_state_code: partyStateCode,
+          transport_mode: transportMode,
+          vehicle_number: vehicleNumber.trim(),
+          place_of_supply: placeOfSupply.trim() || partyAddress.trim() || partyState,
+          narration: narration.trim(),
+        },
+        items: materialLines.map((line) => {
+          const v = variants.find((item) => item.id === line.materialVariantId);
+          const lineProd = products.find((p) => p.id === (line.productId || selectedProductId));
+          return {
+            product_id:
+              line.productId && line.productId !== 'DIRECT' && line.productId !== 'OTHER'
+                ? line.productId
+                : resolvedPrimaryProductId,
+            material_variant_id: line.materialVariantId,
+            item_detail:
+              lineProd && line.productId !== 'DIRECT'
+                ? `${lineProd.name} (${v?.name || ''})`
+                : v?.name || 'STEEL ITEM',
+            hsn_code: line.hsnCode || '7308',
+            uom: line.uom || 'RMT',
+            rate: line.rate ? parseFloat(line.rate) : undefined,
+            piece_count: line.pieceCount ? parseInt(line.pieceCount, 10) : 1,
+            input_length: line.inputLength ? parseFloat(line.inputLength) : undefined,
+            input_breadth: line.inputBreadth ? parseFloat(line.inputBreadth) : undefined,
+            input_weight_kg: line.inputWeightKg ? parseFloat(line.inputWeightKg) : undefined,
+            quantity_consumed: line.quantityConsumed ? parseFloat(line.quantityConsumed) : undefined,
+            item_price_inr: line.itemPrice ? parseFloat(line.itemPrice) : undefined,
+            gst_percent: numericGstRate,
+          };
+        }),
       };
 
       const res = await fetch('/api/bills', {
@@ -377,17 +563,23 @@ export default function WorkerPortalPage() {
         return;
       }
 
-      alert('Production bill submitted successfully to the Admin approval queue!');
       setCustomerName('');
+      setPartyAddress('');
+      setPartyGstin('');
+      setVehicleNumber('');
+      setPlaceOfSupply('');
+      setNarration('');
       setSellingPrice('');
       setNewProductName('');
       setShowNewProductBox(false);
       setMaterialLines([
-        { productId: '', materialVariantId: '', pieceCount: '1', inputLength: '7', inputBreadth: '3', inputWeightKg: '', quantityConsumed: '', itemPrice: '' },
+        { productId: '', materialVariantId: '', hsnCode: '7308', uom: 'RMT', rate: '', pieceCount: '1', inputLength: '7', inputBreadth: '3', inputWeightKg: '', quantityConsumed: '', itemPrice: '' },
       ]);
-      loadCatalog();
-      loadBills();
+      await Promise.all([loadCatalog(), loadBills()]);
       setActiveTab('dashboard');
+      if (data.bill) {
+        openDecisionModal(data.bill);
+      }
     } catch (err: any) {
       setFormError(err.message || 'Network error occurred');
     } finally {
@@ -540,12 +732,22 @@ export default function WorkerPortalPage() {
                     <div key={bill.id} className="p-4 hover:bg-slate-800/30 transition-colors">
                       <div className="flex items-start justify-between flex-wrap gap-3">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-xs font-bold text-slate-200">#{bill.bill_number}</span>
                             <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">
                               {bill.product_name}
                             </span>
                             {getStatusBadge(bill.status)}
+                            {bill.status === 'APPROVED' && bill.decided_by_username && (
+                              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 font-mono">
+                                Approved by @{bill.decided_by_username}
+                              </span>
+                            )}
+                            {bill.status === 'REJECTED' && bill.decided_by_username && (
+                              <span className="text-[11px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-500/30 font-mono">
+                                Rejected by @{bill.decided_by_username}
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-300 mt-1">Customer: <b className="text-slate-100">{bill.customer_name}</b></p>
                           <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
@@ -553,13 +755,37 @@ export default function WorkerPortalPage() {
                           </p>
                         </div>
 
-                        <div className="text-right">
-                          <p className="text-base font-black text-emerald-400 font-mono">
-                            ₹{parseFloat(bill.final_total_inr.toString()).toFixed(2)}
-                          </p>
-                          <p className="text-[11px] text-slate-400">
-                            Base: ₹{parseFloat(bill.selling_price_inr.toString()).toFixed(2)} + GST ({bill.gst_rate}%): ₹{parseFloat(bill.gst_amount_inr.toString()).toFixed(2)}
-                          </p>
+                        <div className="text-right flex flex-col items-end gap-2">
+                          <div>
+                            <p className="text-base font-black text-emerald-400 font-mono">
+                              ₹{parseFloat(bill.final_total_inr.toString()).toFixed(2)}
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Base: ₹{parseFloat(bill.selling_price_inr.toString()).toFixed(2)} + GST ({bill.gst_rate}%): ₹{parseFloat(bill.gst_amount_inr.toString()).toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {bill.status === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => openDecisionModal(bill)}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                Review &amp; Approve
+                              </button>
+                            )}
+                            {bill.status === 'APPROVED' && (
+                              <button
+                                type="button"
+                                onClick={() => openAndPrintTaxInvoice(bill, 'Original Copy')}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow transition"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                Tax Invoice
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -635,19 +861,73 @@ export default function WorkerPortalPage() {
                 </div>
               )}
 
-              {/* Step 1: Customer Name Only (Items are chosen per line below) */}
-              <div className="mb-5">
-                <label className="block text-xs font-semibold uppercase text-slate-400 mb-1.5">
-                  1. Customer Name
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="e.g. Ramesh Hardware / Amit Sharma"
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                />
+              {/* Step 1: Party Details & Transport Details (Matches Vishawkarma Steel Udyog Tax Invoice) */}
+              <div className="mb-5 p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
+                    1. Party Details &amp; Transport Info (Tax Invoice Header)
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">Vishawkarma Steel Udyog Format</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold uppercase text-slate-300 mb-1">Party / Customer Name *</label>
+                    <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g. Dashmesh Door Store" className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold uppercase text-slate-300 mb-1">Party Address (City / Pin / Ph.)</label>
+                    <input type="text" value={partyAddress} onChange={(e) => setPartyAddress(e.target.value)} placeholder="e.g. Shop No 01, Raisinghnagar Road, Sri Vijay Nagar (335704)" className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Party GSTIN / UIN</label>
+                    <input type="text" value={partyGstin} onChange={(e) => setPartyGstin(e.target.value.toUpperCase())} placeholder="e.g. 08AAUFD0041L1Z9" className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Party State &amp; Code</label>
+                    <select
+                      value={`${partyState}|${partyStateCode}`}
+                      onChange={(e) => {
+                        const [st, code] = e.target.value.split('|');
+                        setPartyState(st);
+                        setPartyStateCode(code);
+                      }}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs"
+                    >
+                      {INDIAN_STATES.map((st) => (
+                        <option key={st.code} value={`${st.name}|${st.code}`}>
+                          {st.name} (StateCode: {st.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Transport &amp; Bill Type</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <select value={transportMode} onChange={(e) => setTransportMode(e.target.value)} className="w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs">
+                        <option value="Intra">Intra</option>
+                        <option value="By Road">By Road</option>
+                        <option value="Self">Self</option>
+                      </select>
+                      <select value={invoiceType} onChange={(e) => setInvoiceType(e.target.value)} className="w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs">
+                        <option value="Credit">Credit</option>
+                        <option value="Cash">Cash</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Vehicle Number</label>
+                    <input type="text" value={vehicleNumber} onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())} placeholder="e.g. HR57B4842" className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Place of Supply</label>
+                    <input type="text" value={placeOfSupply} onChange={(e) => setPlaceOfSupply(e.target.value)} placeholder="e.g. Sri Vijay Nagar (Rj)" className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-semibold uppercase text-slate-400 mb-1">Narration / Remarks (Optional)</label>
+                    <input type="text" value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="Optional invoice narration..." className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs" />
+                  </div>
+                </div>
               </div>
 
               {/* Inline Add New Product Creator when "+ Add New Product" or "Other" is active */}
@@ -809,30 +1089,54 @@ export default function WorkerPortalPage() {
                         </div>
 
                         <div>
-                          <label className="block text-[11px] text-slate-400 mb-1">Pieces / Count (InvenTree)</label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={line.pieceCount}
-                            onChange={(e) => updateMaterialLine(idx, 'pieceCount', e.target.value)}
-                            placeholder="1"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
+                          <label className="block text-[11px] text-slate-400 mb-1">HSN &amp; UOM</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              value={line.hsnCode}
+                              onChange={(e) => updateMaterialLine(idx, 'hsnCode', e.target.value)}
+                              placeholder="7308"
+                              className="w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono"
+                              title="HSN Code"
+                            />
+                            <select
+                              value={line.uom}
+                              onChange={(e) => updateMaterialLine(idx, 'uom', e.target.value)}
+                              className="w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono"
+                              title="Unit of Measure"
+                            >
+                              <option value="RMT">RMT</option>
+                              <option value="kg">kg</option>
+                              <option value="FT">FT</option>
+                              <option value="PCS">PCS</option>
+                              <option value="LTR">LTR</option>
+                            </select>
+                          </div>
                         </div>
 
                         <div>
                           <label className="block text-[11px] font-semibold text-emerald-400 mb-1">
-                            Item #{idx + 1} Price (₹)
+                            Rate &amp; Item #{idx + 1} Amount (₹)
                           </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={line.itemPrice}
-                            onChange={(e) => updateMaterialLine(idx, 'itemPrice', e.target.value)}
-                            placeholder="e.g. 2500 (combines in total)"
-                            className="w-full px-3 py-2 bg-slate-900 border border-emerald-500/40 rounded-lg text-emerald-300 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={line.rate}
+                              onChange={(e) => updateMaterialLine(idx, 'rate', e.target.value)}
+                              placeholder="Rate"
+                              className="w-full px-2 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs font-mono"
+                              title="Rate per unit (optional)"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={line.itemPrice}
+                              onChange={(e) => updateMaterialLine(idx, 'itemPrice', e.target.value)}
+                              placeholder="Amount ₹"
+                              className="w-full px-2 py-2 bg-slate-900 border border-emerald-500/40 rounded-lg text-emerald-300 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -973,21 +1277,29 @@ export default function WorkerPortalPage() {
                 </div>
               </div>
 
-              {/* Submit Buttons */}
+              {/* Submit & Preview Buttons */}
               <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-5">
                 <button
                   type="button"
                   onClick={() => setActiveTab('dashboard')}
-                  className="w-full sm:flex-1 py-3 min-h-[46px] bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold rounded-xl transition-colors"
+                  className="w-full sm:w-auto px-5 py-3 min-h-[46px] bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold rounded-xl transition-colors"
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePreviewDraftInvoice}
+                  className="w-full sm:flex-1 py-3 min-h-[46px] bg-slate-900 hover:bg-slate-800 border border-indigo-500/40 text-indigo-300 text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Preview Draft Tax Invoice
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="w-full sm:flex-1 py-3 min-h-[46px] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
                 >
-                  {submitting ? 'Submitting Order...' : 'Submit to Admin Queue'}
+                  {submitting ? 'Generating Bill...' : 'Generate Bill & Proceed to Approve'}
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -995,6 +1307,156 @@ export default function WorkerPortalPage() {
           </form>
         )}
       </main>
+
+      {/* WORKER BILL DECISION GATEWAY MODAL */}
+      {showDecisionModal && selectedDecisionBill && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  Bill Decision Gateway — #{selectedDecisionBill.bill_number}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Review production consumption and specify routing command.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDecisionModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80 text-xs">
+              <div>
+                <span className="text-slate-500 uppercase text-[10px]">Product</span>
+                <p className="font-semibold text-white">{selectedDecisionBill.product_name}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 uppercase text-[10px]">Customer</span>
+                <p className="font-semibold text-white">{selectedDecisionBill.customer_name}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 uppercase text-[10px]">Worker</span>
+                <p className="font-semibold text-indigo-400 font-mono">@{workerUsername}</p>
+              </div>
+              <div>
+                <span className="text-slate-500 uppercase text-[10px]">Final Bill Total</span>
+                <p className="font-bold text-emerald-400 font-mono text-sm">
+                  ₹{parseFloat(selectedDecisionBill.final_total_inr?.toString() || '0').toFixed(2)}
+                </p>
+              </div>
+            </div>
+            {selectedDecisionBill.items && selectedDecisionBill.items.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Materials to Consume</span>
+                <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/40">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-900 text-slate-400 text-[10px] uppercase border-b border-slate-800">
+                      <tr>
+                        <th className="px-3 py-2">Material</th>
+                        <th className="px-3 py-2">Dimensions</th>
+                        <th className="px-3 py-2 text-right">Feet</th>
+                        <th className="px-3 py-2 text-right">Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50 font-mono text-[11px]">
+                      {selectedDecisionBill.items.map((item, idx) => (
+                        <tr key={item.id || `dec-item-${idx}`}>
+                          <td className="px-3 py-1.5 font-sans font-medium text-slate-200">{item.material_name}</td>
+                          <td className="px-3 py-1.5 text-slate-400">
+                            {item.input_length && item.input_breadth ? `${item.input_length}' × ${item.input_breadth}'` : 'Direct'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-slate-300">{item.calculated_feet ? `${item.calculated_feet} ft` : '-'}</td>
+                          <td className="px-3 py-1.5 text-right font-bold text-emerald-400">
+                            {item.unit === 'GRAM'
+                              ? `${(parseFloat(item.actual_quantity_consumed.toString()) / 1000).toFixed(2)} kg`
+                              : `${item.actual_quantity_consumed} ${item.unit}`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <div className="space-y-3 pt-2 border-t border-slate-800">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Confirmation Action <span className="text-slate-500 font-normal">(Type Approve or reject)</span>
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={commandInput}
+                  onChange={(e) => setCommandInput(e.target.value)}
+                  placeholder="Enter Approve or reject"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white font-mono placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {isApproveCmd && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-semibold">Bill Approval (@{workerUsername}):</strong>
+                    Consumes material stock from ERP inventory ledger and marks bill as Approved by @{workerUsername}.
+                  </div>
+                </div>
+              )}
+
+              {isRejectCmd && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Reason for Rejection <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="e.g. Incorrect dimensions, revised pricing needed"
+                    className="w-full bg-slate-950 border border-rose-500/50 rounded-xl px-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-[11px] text-slate-400 mr-1">Quick Fill Mode:</span>
+              <button type="button" onClick={() => setCommandInput('Approve')} className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono">
+                Approve
+              </button>
+              <button type="button" onClick={() => setCommandInput('reject')} className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-mono">
+                Reject Bill
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button type="button" onClick={() => setShowDecisionModal(false)} disabled={processingDecision} className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition">
+                Keep Pending
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteDecision}
+                disabled={!isValidDecisionCmd || processingDecision || (isRejectCmd && !rejectionReason.trim())}
+                className={`px-5 py-2 rounded-xl font-bold text-xs tracking-wide transition shadow-lg flex items-center gap-1.5 ${
+                  !isValidDecisionCmd
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : isRejectCmd
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                {processingDecision ? 'Processing...' : isRejectCmd ? 'Confirm Rejection' : 'Confirm Approval'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Bottom Navigation Bar */}
       <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur border-t border-slate-800 pb-safe">

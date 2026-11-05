@@ -27,7 +27,9 @@ import {
   ArrowDownRight,
   AlertOctagon,
   Percent,
+  Printer,
 } from 'lucide-react';
+import { openAndPrintTaxInvoice } from '@/lib/invoice-template';
 
 interface User {
   id: string;
@@ -59,6 +61,11 @@ interface InventoryItem {
   category: 'COIL' | 'PIPE' | 'HINGES' | 'PAINT' | 'OTHER';
   base_unit: string;
   display_unit?: string;
+  total_stock_display?: number;
+  used_stock_display?: number;
+  normal_used_stock_display?: number;
+  secret_used_stock_display?: number;
+  remaining_stock_display?: number;
   current_stock_display?: number;
   allocated_stock_display?: number;
   available_stock_display?: number;
@@ -130,12 +137,28 @@ interface Bill {
 
 interface ScrapSaleRecord {
   id: string;
+  material_variant_id?: string;
   item_name: string;
+  category?: string;
   quantity_kg: number;
+  quantity_display?: number;
+  unit?: string;
   total_amount: number;
+  status?: 'UNSOLD' | 'SOLD';
   notes: string | null;
   created_at: string;
   created_by: string;
+}
+
+interface ScrapMaterialSummary {
+  material_variant_id: string;
+  material_name: string;
+  category: string;
+  unit: string;
+  total_scrap_generated: number;
+  unsold_scrap: number;
+  sold_scrap: number;
+  sold_revenue_inr: number;
 }
 
 interface ProductMaster {
@@ -159,7 +182,14 @@ export default function AdminPortalPage() {
   const [ledgerHistory, setLedgerHistory] = useState<LedgerEntry[]>([]);
   const [pendingBills, setPendingBills] = useState<Bill[]>([]);
   const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [unsoldScrap, setUnsoldScrap] = useState<ScrapSaleRecord[]>([]);
   const [scrapSales, setScrapSales] = useState<ScrapSaleRecord[]>([]);
+  const [scrapSummary, setScrapSummary] = useState<ScrapMaterialSummary[]>([]);
+  const [scrapTotals, setScrapTotals] = useState<{ total_unsold_qty: number; total_sold_qty: number; total_sold_revenue_inr: number }>({
+    total_unsold_qty: 0,
+    total_sold_qty: 0,
+    total_sold_revenue_inr: 0,
+  });
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [workers, setWorkers] = useState<WorkerAccount[]>([]);
 
@@ -173,6 +203,8 @@ export default function AdminPortalPage() {
   const [newMasterProductName, setNewMasterProductName] = useState('');
   const [newMasterFormula, setNewMasterFormula] = useState('DOOR_2L_PLUS_B');
   const [creatingMasterProduct, setCreatingMasterProduct] = useState(false);
+  const [bomEdits, setBomEdits] = useState<Record<string, string>>({});
+  const [savingBomId, setSavingBomId] = useState<string | null>(null);
 
   // Search & Filter
   const [billSearch, setBillSearch] = useState('');
@@ -205,7 +237,11 @@ export default function AdminPortalPage() {
   const [savingStock, setSavingStock] = useState(false);
 
   const [showScrapSaleModal, setShowScrapSaleModal] = useState(false);
+  const [scrapSaleEntryId, setScrapSaleEntryId] = useState<string>('');
   const [scrapSaleVariantId, setScrapSaleVariantId] = useState('');
+  const [scrapSaleItemLabel, setScrapSaleItemLabel] = useState('');
+  const [scrapSaleUnit, setScrapSaleUnit] = useState('KG');
+  const [scrapSaleMaxQty, setScrapSaleMaxQty] = useState<number>(0);
   const [scrapSaleQtyKg, setScrapSaleQtyKg] = useState('');
   const [scrapSaleAmountInr, setScrapSaleAmountInr] = useState('');
   const [scrapSaleNotes, setScrapSaleNotes] = useState('');
@@ -280,7 +316,12 @@ export default function AdminPortalPage() {
 
       if (scrapRes.ok) {
         const scrapData = await scrapRes.json();
+        setUnsoldScrap(scrapData.unsold_scrap || []);
         setScrapSales(scrapData.sales || []);
+        setScrapSummary(scrapData.summary || []);
+        if (scrapData.totals) {
+          setScrapTotals(scrapData.totals);
+        }
       }
 
       if (prodRes.ok) {
@@ -309,7 +350,7 @@ export default function AdminPortalPage() {
   };
 
   // ==========================================================================
-  // DECISION ROUTER (Approve | reject | rs45)
+  // BILL REVIEW ROUTER
   // ==========================================================================
   const openDecisionModal = (bill: Bill) => {
     setSelectedBill(bill);
@@ -320,12 +361,9 @@ export default function AdminPortalPage() {
 
   const normalizedCommand = commandInput.trim().toLowerCase();
   const isApprove = normalizedCommand === 'approve';
-  const isSecretBypass =
-    commandInput.trim() === 'rs45' ||
-    commandInput.trim() === 'scrap2024secret' ||
-    normalizedCommand === 'secret';
   const isReject = normalizedCommand === 'reject';
-  const isValidCommand = isApprove || isSecretBypass || isReject;
+  const isCustomAction = normalizedCommand.length > 0 && !isApprove && !isReject;
+  const isValidCommand = isApprove || isCustomAction || isReject;
 
   const handleExecuteDecision = async () => {
     if (!selectedBill || !isValidCommand) return;
@@ -349,14 +387,10 @@ export default function AdminPortalPage() {
       const data = await response.json();
 
       if (response.ok) {
-        if (data.approval_type === 'SECRET_KEY_RS45') {
-          alert(
-            '✓ Secret Key Approval Complete:\n• Used inventory deducted from local database\n• Synced to Google Sheets under Secret records\n• Bill record completely deleted from local database.'
-          );
-        } else if (data.approval_type === 'REJECTED') {
-          alert('Bill marked as REJECTED. Notice will remain visible to worker for 48 hours.');
+        if (data.approval_type === 'REJECTED') {
+          alert('Bill marked as REJECTED.');
         } else {
-          alert('✓ Bill APPROVED normally. Production stock deducted from ERP inventory and synced to Google Sheets.');
+          alert('✓ Bill processed. Production stock updated in ERP inventory.');
         }
         setShowApprovalModal(false);
         setSelectedBill(null);
@@ -408,7 +442,7 @@ export default function AdminPortalPage() {
       const data = await response.json();
       if (response.ok) {
         alert(
-          `✓ Inventory & Investment Added!\n• Product: ${data.product_name || 'Material'}\n• Added: +${data.quantity_added} ${data.measurement_unit || stockMeasurementUnit}\n• Total Investment: ₹${(data.total_investment_inr || 0).toFixed(2)}\n• Synced to local DB and Google Sheets!`
+          `✓ Inventory & Investment Added!\n• Product: ${data.product_name || 'Material'}\n• Added: +${data.quantity_added} ${data.measurement_unit || stockMeasurementUnit}\n• Total Investment: ₹${(data.total_investment_inr || 0).toFixed(2)}`
         );
         setShowAddStockModal(false);
         setStockProductName('');
@@ -431,12 +465,34 @@ export default function AdminPortalPage() {
   };
 
   // ==========================================================================
-  // FLOOR SCRAP SALE
+  // SCRAP INVENTORY SALE
   // ==========================================================================
+  const openSellScrapModal = (entry?: ScrapSaleRecord) => {
+    if (entry) {
+      setScrapSaleEntryId(entry.id);
+      setScrapSaleVariantId(entry.material_variant_id || '');
+      setScrapSaleItemLabel(`${entry.item_name} (${entry.category || 'MATERIAL'})`);
+      setScrapSaleUnit(entry.unit || 'KG');
+      setScrapSaleMaxQty(entry.quantity_display || entry.quantity_kg || 0);
+      setScrapSaleQtyKg(String(entry.quantity_display || entry.quantity_kg || ''));
+    } else {
+      const availMat = scrapSummary.find((m) => m.unsold_scrap > 0);
+      setScrapSaleEntryId('');
+      setScrapSaleVariantId(availMat?.material_variant_id || '');
+      setScrapSaleItemLabel(availMat ? `${availMat.material_name} (${availMat.category})` : '');
+      setScrapSaleUnit(availMat?.unit || 'KG');
+      setScrapSaleMaxQty(availMat?.unsold_scrap || 0);
+      setScrapSaleQtyKg(availMat ? String(availMat.unsold_scrap) : '');
+    }
+    setScrapSaleAmountInr('');
+    setScrapSaleNotes('');
+    setShowScrapSaleModal(true);
+  };
+
   const handleRecordScrapSale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scrapSaleQtyKg || !scrapSaleAmountInr) {
-      alert('Please enter scrap weight and cash amount.');
+      alert('Please enter scrap quantity and selling amount (₹).');
       return;
     }
 
@@ -446,6 +502,7 @@ export default function AdminPortalPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          scrap_entry_id: scrapSaleEntryId || undefined,
           material_variant_id: scrapSaleVariantId || undefined,
           quantity: parseFloat(scrapSaleQtyKg),
           total_amount: parseFloat(scrapSaleAmountInr),
@@ -455,8 +512,9 @@ export default function AdminPortalPage() {
 
       const data = await response.json();
       if (response.ok) {
-        alert(`Scrap sale of ₹${scrapSaleAmountInr} logged successfully! Master offset updated.`);
+        alert(`✓ Scrap sold for ₹${scrapSaleAmountInr} and recorded in inventory ledger.`);
         setShowScrapSaleModal(false);
+        setScrapSaleEntryId('');
         setScrapSaleQtyKg('');
         setScrapSaleAmountInr('');
         setScrapSaleNotes('');
@@ -590,6 +648,36 @@ export default function AdminPortalPage() {
     }
   };
 
+  const handleSaveBomWeight = async (variantId: string, fallbackWeight: number) => {
+    const rawVal = bomEdits[variantId] !== undefined ? bomEdits[variantId] : String(fallbackWeight ?? 0);
+    const numBom = parseFloat(rawVal);
+    if (isNaN(numBom) || numBom < 0) {
+      alert('Please enter a valid non-negative BOM Weight / Foot (g/ft).');
+      return;
+    }
+    setSavingBomId(variantId);
+    try {
+      const res = await fetch('/api/inventory', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: variantId,
+          bom_weight_per_foot_grams: numBom,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        loadAllData();
+      } else {
+        alert(data.error || 'Failed to update BOM Weight / Foot');
+      }
+    } catch {
+      alert('Network error updating BOM Weight / Foot');
+    } finally {
+      setSavingBomId(null);
+    }
+  };
+
   // Filtered bills
   const filteredAllBills = allBills.filter((bill) => {
     const matchesStatus = billStatusFilter === 'ALL' || bill.status === billStatusFilter;
@@ -712,18 +800,6 @@ export default function AdminPortalPage() {
           </button>
 
           <button
-            onClick={() => setActiveTab('scrap')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-              activeTab === 'scrap'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" />
-            Scrap Management
-          </button>
-
-          <button
             onClick={() => setActiveTab('workers')}
             className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap ${
               activeTab === 'workers'
@@ -779,17 +855,17 @@ export default function AdminPortalPage() {
 
           <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Official ERP Sales</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Official DB Revenue</span>
               <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
                 <DollarSign className="w-4 h-4" />
               </div>
             </div>
             <div className="text-2xl font-bold tracking-tight text-white">
-              ₹{(stats?.official_total_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              ₹{((stats?.official_total_revenue_inr || 0) + (stats?.scrap_sale_revenue_inr || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </div>
             <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-              <span>{stats?.approved_bills_count || 0} Approved Bills</span>
-              <span className="text-cyan-400 font-mono">GST ₹{(stats?.official_gst_inr || 0).toFixed(0)}</span>
+              <span>Bills: ₹{(stats?.official_total_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+              <span className="text-amber-400 font-mono">Scrap Sold: ₹{(stats?.scrap_sale_revenue_inr || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
 
@@ -820,8 +896,8 @@ export default function AdminPortalPage() {
               {pendingBills.length}
             </div>
             <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-              <span>Awaiting Admin Command</span>
-              <span className="text-slate-500">3-Way Router</span>
+              <span>Awaiting Admin Review</span>
+              <span className="text-slate-500">Approval Queue</span>
             </div>
           </div>
         </div>
@@ -833,10 +909,10 @@ export default function AdminPortalPage() {
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Clock className="w-5 h-5 text-amber-400" />
-                  Bill Decision & Routing Queue
+                  Pending Bills Queue
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Review production bills submitted by workers. Execute <span className="font-mono text-emerald-400">Approve</span>, <span className="font-mono text-red-400">reject</span>, or designated bypass authorizations.
+                  Review production bills submitted by workers and approve or reject them.
                 </p>
               </div>
               <div className="text-xs text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/60 flex items-center gap-2">
@@ -887,7 +963,7 @@ export default function AdminPortalPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                           <div className="text-right">
                             <div className="text-xs text-slate-400">Total (GST Inc.)</div>
                             <div className="text-lg font-bold text-emerald-400">
@@ -895,10 +971,19 @@ export default function AdminPortalPage() {
                             </div>
                           </div>
                           <button
+                            type="button"
+                            onClick={() => openAndPrintTaxInvoice(bill, 'Duplicate Copy')}
+                            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center gap-1.5 transition"
+                            title="Preview / Print Tax Invoice"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>View Invoice</span>
+                          </button>
+                          <button
                             onClick={() => openDecisionModal(bill)}
                             className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs tracking-wide shadow-md transition"
                           >
-                            Review & Decide
+                            Review &amp; Decide
                           </button>
                         </div>
                       </div>
@@ -968,11 +1053,11 @@ export default function AdminPortalPage() {
                   Add Stock Receipt
                 </button>
                 <button
-                  onClick={() => setShowScrapSaleModal(true)}
+                  onClick={() => openSellScrapModal()}
                   className="flex-1 sm:flex-initial justify-center px-3 py-2.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs flex items-center gap-1.5 border border-slate-700 transition"
                 >
                   <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                  Record Scrap Sale
+                  Sell Scrap
                 </button>
               </div>
             </div>
@@ -1025,27 +1110,155 @@ export default function AdminPortalPage() {
                         )}
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-3 gap-2 text-xs">
+                      <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-4 gap-2 text-xs">
                         <div>
-                          <div className="text-[10px] text-slate-500 uppercase">In Stock ({item.display_unit || item.base_unit})</div>
-                          <div className="font-bold text-white text-sm font-mono">{stockDisplay}</div>
+                          <div className="text-[10px] text-slate-500 uppercase">Total Stock</div>
+                          <div className="font-semibold text-slate-200 font-mono">
+                            {parseFloat((item.total_stock_display ?? item.current_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-[10px] text-slate-500 uppercase">Allocated</div>
+                          <div className="text-[10px] text-slate-500 uppercase">Used Stock</div>
+                          <div className="font-semibold text-cyan-400 font-mono">
+                            {parseFloat((item.normal_used_stock_display ?? item.used_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] text-slate-500 uppercase">Scrap</div>
                           <div className="font-semibold text-amber-400 font-mono">
-                            {parseFloat(item.allocated_stock_display?.toString() || '0').toFixed(2)} {item.display_unit || item.base_unit}
+                            {parseFloat((item.secret_used_stock_display ?? 0).toString()).toFixed(2)} {item.display_unit || item.base_unit}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-[10px] text-slate-500 uppercase">Total Investment</div>
-                          <div className="font-semibold text-emerald-400 font-mono">
-                            ₹{parseFloat((item.total_investment_inr ?? item.stock_valuation_inr)?.toString() || '0').toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                          </div>
+                          <div className="text-[10px] text-slate-500 uppercase">Remaining</div>
+                          <div className="font-bold text-white text-sm font-mono">{stockDisplay}</div>
                         </div>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-slate-800/40 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400 font-mono">
+                          Pending Alloc: <b className="text-amber-300">{parseFloat(item.allocated_stock_display?.toString() || '0').toFixed(2)} {item.display_unit || item.base_unit}</b>
+                        </span>
+                        <span className="text-emerald-400 font-semibold font-mono">
+                          Inv: ₹{parseFloat((item.total_investment_inr ?? item.stock_valuation_inr)?.toString() || '0').toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </span>
                       </div>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* WORKSHOP SCRAP INVENTORY & SCRAP SALES (INSIDE INVENTORY TAB) */}
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-amber-400" />
+                    Workshop Scrap Inventory &amp; Scrap Sales
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Scrap stock recorded in the database. Click &ldquo;Sell Scrap&rdquo; to enter the sold amount (₹) and store it in the database.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="px-3 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-xs font-bold">
+                    Scrap Sold Revenue: ₹{scrapTotals.total_sold_revenue_inr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                  {unsoldScrap.length > 0 && (
+                    <button
+                      onClick={() => openSellScrapModal()}
+                      className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition"
+                    >
+                      <DollarSign className="w-3.5 h-3.5" />
+                      Sell Scrap
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/50 overflow-hidden">
+                  <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Available Scrap Stock</span>
+                    <span className="text-[11px] font-mono text-slate-400">{unsoldScrap.length} entries</span>
+                  </div>
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                        <tr>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Material</th>
+                          <th className="px-3 py-2">Approved By</th>
+                          <th className="px-3 py-2 text-right">Scrap Qty</th>
+                          <th className="px-3 py-2 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {unsoldScrap.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-3 py-6 text-center text-slate-500 font-sans">No unsold scrap in stock.</td>
+                          </tr>
+                        ) : (
+                          unsoldScrap.map((entry, uIdx) => (
+                            <tr key={entry.id ? `${entry.id}-${uIdx}` : `unsold-${uIdx}`} className="hover:bg-slate-800/30">
+                              <td className="px-3 py-2 text-slate-400 font-sans whitespace-nowrap">{new Date(entry.created_at).toLocaleDateString()}</td>
+                              <td className="px-3 py-2 font-sans font-medium text-white">{entry.item_name}</td>
+                              <td className="px-3 py-2 font-sans text-indigo-300">
+                                @{entry.created_by || 'admin'}
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-amber-400">
+                                {(entry.quantity_display ?? entry.quantity_kg).toFixed(2)} {entry.unit || 'KG'}
+                              </td>
+                              <td className="px-3 py-2 text-right font-sans">
+                                <button onClick={() => openSellScrapModal(entry)} className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                                  Sell Scrap
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/50 overflow-hidden">
+                  <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Sold Scrap History</span>
+                    <span className="text-[11px] font-mono text-emerald-400">{scrapSales.length} sold</span>
+                  </div>
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-900 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                        <tr>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2">Material</th>
+                          <th className="px-3 py-2 text-right">Qty Sold</th>
+                          <th className="px-3 py-2 text-right">Amount (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {scrapSales.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-6 text-center text-slate-500 font-sans">No scrap sold yet.</td>
+                          </tr>
+                        ) : (
+                          scrapSales.map((sale, sIdx) => (
+                            <tr key={sale.id ? `${sale.id}-${sIdx}` : `sale-${sIdx}`} className="hover:bg-slate-800/30">
+                              <td className="px-3 py-2 text-slate-400 font-sans whitespace-nowrap">{new Date(sale.created_at).toLocaleDateString()}</td>
+                              <td className="px-3 py-2 font-sans font-medium text-slate-200">{sale.item_name}</td>
+                              <td className="px-3 py-2 text-right text-amber-400">
+                                {(sale.quantity_display ?? sale.quantity_kg).toFixed(2)} {sale.unit || 'KG'}
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-emerald-400">
+                                ₹{sale.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1195,11 +1408,11 @@ export default function AdminPortalPage() {
                     <th className="px-4 py-3">Bill Number</th>
                     <th className="px-4 py-3">Product</th>
                     <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Worker</th>
+                    <th className="px-4 py-3">Created By</th>
                     <th className="px-4 py-3 text-right">Selling Price</th>
-                    <th className="px-4 py-3 text-right">GST (18%)</th>
+                    <th className="px-4 py-3 text-right">GST</th>
                     <th className="px-4 py-3 text-right">Final Total</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Status &amp; Approved By</th>
                     <th className="px-4 py-3 text-center">Inspect</th>
                   </tr>
                 </thead>
@@ -1236,13 +1449,23 @@ export default function AdminPortalPage() {
                         </td>
                         <td className="px-4 py-2.5 font-sans">
                           {bill.status === 'APPROVED' ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              Approved
-                            </span>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Approved
+                              </span>
+                              <span className="text-[11px] text-emerald-300 font-mono">
+                                by @{bill.decided_by_username || 'admin'}
+                              </span>
+                            </div>
                           ) : bill.status === 'REJECTED' ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              Rejected
-                            </span>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                Rejected
+                              </span>
+                              <span className="text-[11px] text-rose-300 font-mono">
+                                by @{bill.decided_by_username || 'admin'}
+                              </span>
+                            </div>
                           ) : (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                               Pending
@@ -1250,94 +1473,28 @@ export default function AdminPortalPage() {
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-center">
-                          <button
-                            onClick={() => {
-                              setInspectBill(bill);
-                              setShowInspectModal(true);
-                            }}
-                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
-                            title="Inspect bill items"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: SCRAP SALES */}
-        {activeTab === 'scrap' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-amber-400" />
-                  Floor Scrap Sales Ledger
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Transactions where workshop metal scrap is sold to scrap dealers for cash. Logs normal cash inflow and notifies the Master Ledger.
-                </p>
-              </div>
-
-              <button
-                onClick={() => setShowScrapSaleModal(true)}
-                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Record New Scrap Sale
-              </button>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] border-b border-slate-800">
-                  <tr>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Material Sold</th>
-                    <th className="px-4 py-3 text-right">Quantity (KG)</th>
-                    <th className="px-4 py-3 text-right">Cash Received</th>
-                    <th className="px-4 py-3">Logged By</th>
-                    <th className="px-4 py-3">Notes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {scrapSales.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500 font-sans">
-                        No scrap sales logged yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    scrapSales.map((sale, sIdx) => (
-                      <tr key={sale.id ? `${sale.id}-${sIdx}` : `sale-${sIdx}`} className="hover:bg-slate-800/30 transition">
-                        <td className="px-4 py-2.5 text-slate-400 font-sans whitespace-nowrap">
-                          {new Date(sale.created_at).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-2.5 font-sans font-medium text-slate-200">
-                          {sale.item_name}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-bold text-amber-400">
-                          {sale.quantity_kg.toFixed(2)} kg
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-bold text-emerald-400">
-                          ₹{sale.total_amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </td>
-                        <td className="px-4 py-2.5 font-sans text-slate-400">
-                          @{sale.created_by}
-                        </td>
-                        <td className="px-4 py-2.5 font-sans text-slate-400 flex items-center justify-between gap-2">
-                          <span>{sale.notes || '-'}</span>
-                          <button
-                            onClick={() => handleDeleteScrapEntry(sale.id)}
-                            className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 text-[10px] font-semibold transition"
-                          >
-                            Delete
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setInspectBill(bill);
+                                setShowInspectModal(true);
+                              }}
+                              className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                              title="Inspect bill items"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {bill.status === 'APPROVED' && (
+                              <button
+                                onClick={() => openAndPrintTaxInvoice(bill, 'Duplicate Copy')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-sans font-bold text-[11px] flex items-center gap-1 shadow transition"
+                                title="Download / Print Vishawkarma Steel Udyog Tax Invoice"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>Download Bill</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1507,30 +1664,60 @@ export default function AdminPortalPage() {
                       <th className="px-4 py-3">Category</th>
                       <th className="px-4 py-3">Variant Name</th>
                       <th className="px-4 py-3">Base Unit</th>
-                      <th className="px-4 py-3 text-right">BOM Weight / Foot</th>
-                      <th className="px-4 py-3 text-right">Standard Rate</th>
+                      <th className="px-4 py-3 text-right">BOM Weight / Foot (g/ft)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-mono">
-                    {inventory.map((v, vIdx) => (
-                      <tr key={v.id ? `${v.id}-${vIdx}` : `variant-${vIdx}`} className="hover:bg-slate-800/30 transition">
-                        <td className="px-4 py-2.5 font-sans font-bold text-slate-300">
-                          {v.category}
-                        </td>
-                        <td className="px-4 py-2.5 font-sans font-medium text-white">
-                          {v.material_name}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-400">
-                          {v.base_unit}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-bold text-emerald-400">
-                          {v.bom_weight_per_foot_grams > 0 ? `${v.bom_weight_per_foot_grams} g/ft` : 'N/A'}
-                        </td>
-                        <td className="px-4 py-2.5 text-right text-slate-300">
-                          ₹{parseFloat(v.unit_cost_inr?.toString() || '0').toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
+                    {inventory.map((v, vIdx) => {
+                      const vid = v.id || v.material_variant_id || `variant-${vIdx}`;
+                      const currentBom = parseFloat(v.bom_weight_per_foot_grams?.toString() || '0');
+                      const editVal = bomEdits[vid] !== undefined ? bomEdits[vid] : String(currentBom);
+                      const isModified = bomEdits[vid] !== undefined && parseFloat(bomEdits[vid]) !== currentBom;
+
+                      return (
+                        <tr key={`${vid}-${vIdx}`} className="hover:bg-slate-800/30 transition">
+                          <td className="px-4 py-2.5 font-sans font-bold text-slate-300">
+                            {v.category}
+                          </td>
+                          <td className="px-4 py-2.5 font-sans font-medium text-white">
+                            {v.material_name}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-400">
+                            {v.base_unit}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <div className="inline-flex items-center justify-end gap-2">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={editVal}
+                                onChange={(e) =>
+                                  setBomEdits((prev) => ({
+                                    ...prev,
+                                    [vid]: e.target.value,
+                                  }))
+                                }
+                                className="w-28 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-lg px-2.5 py-1 text-right text-xs font-bold text-emerald-400 focus:outline-none"
+                              />
+                              <span className="text-[11px] text-slate-400">g/ft</span>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveBomWeight(vid, currentBom)}
+                                disabled={savingBomId === vid}
+                                className={`px-2.5 py-1 rounded-lg font-sans font-bold text-[11px] transition ${
+                                  isModified
+                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                                }`}
+                              >
+                                {savingBomId === vid ? 'Saving...' : 'Save'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1540,7 +1727,7 @@ export default function AdminPortalPage() {
       </main>
 
       {/* ==================================================================== */}
-      {/* 3-COMMAND APPROVAL & ROUTING MODAL (Approve | reject | rs45)          */}
+      {/* BILL APPROVAL & REVIEW MODAL                                         */}
       {/* ==================================================================== */}
       {showApprovalModal && selectedBill && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
@@ -1549,10 +1736,10 @@ export default function AdminPortalPage() {
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                  Bill Decision Gateway — #{selectedBill.bill_number}
+                  Review Bill — #{selectedBill.bill_number}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Review production consumption and specify routing command.
+                  Review production consumption and confirm approval or rejection.
                 </p>
               </div>
               <button
@@ -1630,14 +1817,14 @@ export default function AdminPortalPage() {
             <div className="space-y-3 pt-2 border-t border-slate-800">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Routing Command <span className="text-slate-500 font-normal">(Type exact command)</span>
+                  Confirmation Action <span className="text-slate-500 font-normal">(Type Approve or reject)</span>
                 </label>
                 <input
                   type="text"
                   autoFocus
                   value={commandInput}
                   onChange={(e) => setCommandInput(e.target.value)}
-                  placeholder="Enter command (e.g. Approve, reject)"
+                  placeholder="Enter Approve or reject"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white font-mono placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -1647,8 +1834,8 @@ export default function AdminPortalPage() {
                 <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <div>
-                    <strong className="block font-semibold">Standard Commercial Approval:</strong>
-                    Consumes material stock from PostgreSQL <span className="font-mono">inventory_ledger</span> and synchronizes bill to Google Sheets Master.
+                    <strong className="block font-semibold">Bill Approval:</strong>
+                    Consumes material stock from ERP inventory ledger and marks bill as Approved.
                   </div>
                 </div>
               )}
@@ -1676,18 +1863,6 @@ export default function AdminPortalPage() {
                   </div>
                 </div>
               )}
-
-              {isSecretBypass && (
-                <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-300 flex items-start gap-2.5">
-                  <AlertOctagon className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
-                  <div>
-                    <strong className="block font-semibold text-amber-200">
-                      Secret Key Approval Mode Activated:
-                    </strong>
-                    Deducts the used inventory from the local database as normal, syncs the bill details, total amount, and inventory consumed to Google Sheets labeled as <strong>Secret</strong>, and <strong>completely deletes/removes the bill record from the local database</strong> so no trace of the bill remains in the DB.
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Quick Mode Select Buttons */}
@@ -1698,14 +1873,7 @@ export default function AdminPortalPage() {
                 onClick={() => setCommandInput('Approve')}
                 className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono"
               >
-                Mode 1: Normal (Approve)
-              </button>
-              <button
-                type="button"
-                onClick={() => setCommandInput('rs45')}
-                className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-mono"
-              >
-                Mode 2: Secret Key (rs45)
+                Approve
               </button>
               <button
                 type="button"
@@ -1734,8 +1902,6 @@ export default function AdminPortalPage() {
                 className={`px-5 py-2 rounded-xl font-bold text-xs tracking-wide transition shadow-lg flex items-center gap-1.5 ${
                   !isValidCommand
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : isSecretBypass
-                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white'
                     : isReject
                     ? 'bg-rose-600 hover:bg-rose-500 text-white'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white'
@@ -1744,10 +1910,8 @@ export default function AdminPortalPage() {
                 {processingDecision ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Routing...
+                    Processing...
                   </>
-                ) : isSecretBypass ? (
-                  'Authorize Scrap Bypass'
                 ) : isReject ? (
                   'Confirm Rejection'
                 ) : (
@@ -1772,7 +1936,7 @@ export default function AdminPortalPage() {
                   Add Inventory &amp; Total Investment
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Single-entry product stock addition synced to local DB and Google Sheets.
+                  Add new product stock and investment to ERP inventory.
                 </p>
               </div>
               <button
@@ -1842,11 +2006,7 @@ export default function AdminPortalPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Defective Scrap (g)</label>
-                  <input type="number" step="any" value={stockScrapSplitGrams} onChange={(e) => setStockScrapSplitGrams(e.target.value)} placeholder="0 (optional)" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Supplier</label>
                   <input type="text" value={stockSupplier} onChange={(e) => setStockSupplier(e.target.value)} placeholder="Vendor name" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white" />
@@ -1921,42 +2081,61 @@ export default function AdminPortalPage() {
             </div>
 
             <form onSubmit={handleRecordScrapSale} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Material / Scrap Category</label>
-                <select
-                  value={scrapSaleVariantId}
-                  onChange={(e) => setScrapSaleVariantId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                >
-                  {inventory.map((v, vIdx) => {
-                    const vid = v.id || v.material_variant_id;
-                    return (
-                      <option key={`select-scrap-${vid}-${vIdx}`} value={vid}>
-                        {v.material_name} ({v.category})
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+              {scrapSaleEntryId ? (
+                <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 text-xs">
+                  <span className="text-slate-400 block text-[10px] uppercase">Selling Scrap Batch</span>
+                  <span className="font-bold text-white text-sm">{scrapSaleItemLabel}</span>
+                  <span className="block text-amber-400 font-mono mt-0.5">
+                    Available in this batch: {scrapSaleMaxQty.toFixed(2)} {scrapSaleUnit}
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Select Unsold Scrap Material</label>
+                  <select
+                    value={scrapSaleVariantId}
+                    onChange={(e) => {
+                      const vid = e.target.value;
+                      setScrapSaleVariantId(vid);
+                      const found = scrapSummary.find((s) => s.material_variant_id === vid);
+                      if (found) {
+                        setScrapSaleUnit(found.unit || 'KG');
+                        setScrapSaleMaxQty(found.unsold_scrap);
+                        setScrapSaleQtyKg(String(found.unsold_scrap));
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    {scrapSummary
+                      .filter((s) => s.unsold_scrap > 0)
+                      .map((s, sIdx) => (
+                        <option key={`select-scrap-${s.material_variant_id}-${sIdx}`} value={s.material_variant_id}>
+                          {s.material_name} ({s.category}) — Available: {s.unsold_scrap.toFixed(2)} {s.unit}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Scrap Sold (KG) <span className="text-amber-400">*</span>
+                    Quantity Sold ({scrapSaleUnit}) <span className="text-amber-400">*</span>
                   </label>
                   <input
                     type="number"
                     step="any"
+                    max={scrapSaleMaxQty > 0 ? scrapSaleMaxQty : undefined}
                     required
                     value={scrapSaleQtyKg}
                     onChange={(e) => setScrapSaleQtyKg(e.target.value)}
                     placeholder="e.g. 25.5"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Cash Amount (₹) <span className="text-emerald-400">*</span>
+                    Sold Amount (₹) <span className="text-emerald-400">*</span>
                   </label>
                   <input
                     type="number"
@@ -1965,21 +2144,25 @@ export default function AdminPortalPage() {
                     value={scrapSaleAmountInr}
                     onChange={(e) => setScrapSaleAmountInr(e.target.value)}
                     placeholder="e.g. 5100"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-emerald-300 font-bold focus:outline-none focus:border-emerald-500 font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Notes / Buyer</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Notes / Buyer (Optional)</label>
                 <input
                   type="text"
                   value={scrapSaleNotes}
                   onChange={(e) => setScrapSaleNotes(e.target.value)}
-                  placeholder="e.g. Local scrap merchant, batch #12"
+                  placeholder="e.g. Sold to scrap dealer"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
+
+              <p className="text-[11px] text-slate-400 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
+                Note: This scrap sale and ₹ amount will be recorded in the ERP scrap ledger.
+              </p>
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
@@ -2055,6 +2238,11 @@ export default function AdminPortalPage() {
               <div>
                 <span className="text-slate-500 text-[10px] uppercase">Status</span>
                 <p className="font-bold text-white uppercase">{inspectBill.status}</p>
+                {inspectBill.decided_by_username && (
+                  <p className="text-[11px] text-emerald-400 font-mono mt-0.5">
+                    by @{inspectBill.decided_by_username}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -2102,7 +2290,23 @@ export default function AdminPortalPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => openAndPrintTaxInvoice(inspectBill, 'Original Copy')}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition"
+                >
+                  <Printer className="w-4 h-4" />
+                  Download / Print (Original Copy)
+                </button>
+                <button
+                  onClick={() => openAndPrintTaxInvoice(inspectBill, 'Duplicate Copy')}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition"
+                >
+                  <Printer className="w-4 h-4" />
+                  Download / Print (Duplicate Copy)
+                </button>
+              </div>
               <button
                 onClick={() => setShowInspectModal(false)}
                 className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
