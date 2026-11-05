@@ -11,7 +11,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: 'cover',
-  themeColor: '#020617',
+  themeColor: '#006EC4',
 }
 
 export default function RootLayout({
@@ -20,8 +20,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="antialiased selection:bg-indigo-500/30 selection:text-indigo-200">{children}</body>
+    <html lang="en">
+      <body className="antialiased selection:bg-[#006EC4]/20 selection:text-[#006EC4]">{children}</body>
     </html>
   )
 }
+
