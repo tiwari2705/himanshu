@@ -5,16 +5,27 @@ const globalForDb = globalThis as unknown as {
 };
 
 function createPool(): Pool {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
+  const rawDatabaseUrl = process.env.DATABASE_URL;
+  if (!rawDatabaseUrl) {
     throw new Error('DATABASE_URL not configured');
   }
 
+  // Automatically upgrade Supabase Supavisor Session Mode (:5432, limited to 15 clients)
+  // to Transaction Mode (:6543, supports 200+ concurrent serverless clients) unless overridden.
+  const databaseUrl =
+    rawDatabaseUrl.includes('pooler.supabase.com:5432/') &&
+    process.env.DB_FORCE_SESSION_MODE !== 'true'
+      ? rawDatabaseUrl.replace('pooler.supabase.com:5432/', 'pooler.supabase.com:6543/')
+      : rawDatabaseUrl;
+
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
   const newPool = new Pool({
     connectionString: databaseUrl,
-    max: 10,
-    idleTimeoutMillis: 20000,
+    max: isServerless ? 2 : 5,
+    idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 30000,
+    allowExitOnIdle: true,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
     ssl: {
@@ -41,25 +52,30 @@ export async function query<T extends QueryResultRow = any>(
   params?: any[]
 ): Promise<QueryResult<T>> {
   let lastError: any;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       return await getPool().query<T>(text, params);
     } catch (err: any) {
       lastError = err;
       const msg = String(err?.message || '').toLowerCase();
       const isTransient =
+        msg.includes('emaxconnsession') ||
+        msg.includes('max clients reached') ||
         msg.includes('timeout') ||
         msg.includes('terminated') ||
         msg.includes('econnreset') ||
         msg.includes('connection') ||
         msg.includes('closed');
 
-      if (isTransient && attempt < 3) {
-        console.warn(`DB query transient notice (attempt ${attempt}/3), retrying...`);
-        try {
-          await globalForDb.pgPool?.end();
-        } catch (_) {}
-        globalForDb.pgPool = createPool();
+      if (isTransient && attempt < 4) {
+        console.warn(`DB query transient notice (attempt ${attempt}/4), retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+        if (!msg.includes('emaxconnsession') && !msg.includes('max clients reached')) {
+          try {
+            await globalForDb.pgPool?.end();
+          } catch (_) {}
+          globalForDb.pgPool = createPool();
+        }
         continue;
       }
       throw err;
@@ -67,6 +83,7 @@ export async function query<T extends QueryResultRow = any>(
   }
   throw lastError;
 }
+
 
 // ============================================================================
 // TypeScript Models for Manufacturing ERP v2.0
